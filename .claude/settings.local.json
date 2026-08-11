@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(git add *)",
-      "Bash(git commit -q -m 'scaffold: seven skill stubs *)"
+      "Bash(git commit -q -m 'scaffold: seven skill stubs *)",
+      "PowerShell($gh = Get-Command gh -ErrorAction SilentlyContinue; if \\($gh\\) { \"gh at: $\\($gh.Source\\)\"; gh auth status 2>&1 | Select-Object -First 10 } else { \"gh NOT FOUND\" })"
     ]
   }
 }
