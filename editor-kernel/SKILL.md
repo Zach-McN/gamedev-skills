@@ -53,6 +53,14 @@ Chokidar watcher + REST for JSON read/write + WebSocket for change events + stat
 
 **Partially discharged.** `npm run sidecar` exists and takes the project folder as its one argument; `npm run editor` lands when there is a Vite app to start. Two things the one-command rule implies in practice, learned by writing it: the command must **print the absolute path it resolved**, because "which folder is it actually watching" is the first question a human asks and a relative argument does not answer it; and every refusal to start must be **one plain sentence naming the path or value at fault**, never a stack trace. Config resolution is therefore a pure function returning a result object, with the process exiting in the entry point only — that is what makes the refusals testable. _[earned 2026-08-11]_
 
+**Discharged.** `npm run editor -- <project-folder>` starts both halves. Three things settled by building it:
+
+1. **One process, not two.** The launcher starts the Vite dev server through its JavaScript API and the sidecar through an exported `startSidecar`, both inside itself. A supervisor spawning two children would have to kill a process tree on Ctrl-C, which is where this goes wrong on Windows — an orphaned server holding the port, with the next start failing for a reason that looks nothing like the cause. Keeping both in one process also removed the need for `concurrently` and `cross-env`.
+2. **Validate before starting anything.** Config resolution runs first, so a missing folder or a taken port refuses while nothing is running. Vite comes up before the sidecar only so its address can appear in the sidecar's banner — one banner naming the folder, the editor URL, and the tree URL, rather than two interleaved ones.
+3. **The project folder falls back to `KERNEL_PROJECT`**, command line winning, mirroring how the port already worked. This is what lets a test harness or a shell profile point the editor at a folder without putting it on the command line — the browser suite depends on it.
+
+_[earned 2026-08-11]_
+
 ### D10: Sidecar first, Tauri later
 
 Ship the web-app-plus-sidecar shape; wrap in Tauri only when a genre editor matures and wants to be double-clickable, swapping the sidecar's HTTP calls for Tauri's fs/watch APIs behind the same interface. **Reason:** the sidecar keeps the dev loop inspectable — Playwright drives it, `curl` pokes it, every boundary is observable. Deferring the wrapper costs nothing because the interface is the same; adopting it early costs verification. _[seeded 2026-08-11, report §8]_
@@ -76,6 +84,8 @@ The narrow exception is migration scripts — a one-off format converter is tool
 ### D15: One editor UI stack across both dimensions
 
 React + docking layout + Zustand/immer + Zod, with only the viewport differing between 2D and 3D kernels. **Reason:** the panels, trees, and inspectors are identical work in both; sharing the stack means the 3D kernel inherits a proven shell and the hard 3D-specific problems (camera, raycast selection, gizmos) get the full budget. Detailed idioms belong to `editor-ui`; the constitution only fixes the stack. _[seeded 2026-08-11, report §6/§7]_
+
+**Confirmed in build.** The shell is React 19 + Vite 8 + `dockview-react` 8 (the React binding package in v8; `dockview` and `dockview-core` arrive underneath it). Zustand and immer were deliberately **not** installed with the shell: there is no document state for them to hold until the first panel that edits something, and adding the undo machinery before there is anything to undo would fix its shape against an imagined document. They land with the first editing panel, not before. _[earned 2026-08-11]_
 
 ---
 
@@ -127,8 +137,12 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/config.ts` — how the sidecar is pointed at a project folder, and every reason it will refuse to start. Loopback host and default port live here.
 - `kernel-2d/sidecar/watcher.ts` — the change-event shape (`FileEvent`) and the write-settling policy. This is the payload the WebSocket will carry when it lands, so change it deliberately.
 - `kernel-2d/sidecar/tree-schema.ts` — the file-tree format served by `GET /tree`. Owned by `text-formats`.
+- `kernel-2d/sidecar/status-schema.ts` — the status format served by `GET /`: which project is open and what else this sidecar serves. The first format read by both halves of the system.
 - `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /` and `GET /tree`.
+- `kernel-2d/sidecar/start.ts` — bringing the sidecar up as a library rather than as a command, which is what lets the editor launcher host it in-process (D9).
 - `kernel-2d/sidecar/ignore.ts` — what the sidecar never lists and never watches.
+- `kernel-2d/scripts/editor.ts` — the one command (D9).
+- `kernel-2d/editor/` — the editor shell. Owned by `editor-ui`; referenced here only so the boundary is visible from the constitution.
 
 **Not yet written** — these are the kernel's core contracts and land as the corresponding sessions build them. Until a path appears here, the contract does not exist and must not be assumed:
 
