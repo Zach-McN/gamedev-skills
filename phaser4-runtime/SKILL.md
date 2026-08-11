@@ -13,7 +13,21 @@ _None recorded yet. Filled via dual-write as the kernel is built._
 
 ## Gotchas
 
-_None recorded yet. Filled via dual-write as the kernel is built. Includes Phaser-3-contamination traps as they are discovered._
+### G1: v3 contamination — AI-generated Phaser code defaults to Phaser 3
+
+Model training data is saturated with a decade of Phaser 3 tutorials and Stack Overflow answers. Any session writing Phaser code from memory will produce v3 idioms, and most of them fail in v4 — some loudly, some silently. Before trusting any generated Phaser API call, check it against `vendor/phaser4/MIGRATION-GUIDE.md` (the authority for what changed) and `vendor/phaser4/types/phaser.d.ts` (the authority for what exists).
+
+The silent failures are the dangerous ones — same name, different behavior, no error:
+
+- `Math.TAU` **changed value**: PI/2 in v3, PI*2 in v4. Rotation code contaminated with the v3 assumption is wrong by a factor of 4 and throws nothing. v3-`TAU` intent now needs `Math.PI_OVER_2`.
+- `roundPixels` default flipped `true` → `false`. Pixel-art rendering silently blurs.
+- `DynamicTexture`/`RenderTexture` draw commands are now buffered; nothing appears until `render()` is called. v3 habit executes draws immediately and expects them visible.
+
+Loud failures a v3-trained session will still write confidently: `setTintFill()` (gone → `setTint().setTintMode(Phaser.TintModes.FILL)`), `Geom.Point` (gone → `Vector2`), `setPipeline('Light2D')` (pipelines removed entirely → `setLighting(true)`), `BitmapMask` (gone → `filters.internal.addMask()`), `Phaser.Struct.Set`/`Map` (gone → native `Set`/`Map`), `Mesh`/`Plane` game objects (removed).
+
+**Fix/policy:** never write Phaser code purely from memory. Verify against the vendored `.d.ts`; when editor or runtime code touches an area listed in the migration guide's checklist, read that section first. Phaser also ships official per-topic skills inside its npm package (see `vendor/phaser4/PROVENANCE.md`) including a v3→v4 migration skill vendored at `vendor/phaser4/v3-to-v4-migration-SKILL.md`.
+
+_(Recorded 2026-08-11 from the vendored 4.1.0 migration guide, at vendoring time — before kernel runtime sessions began. Session-earned contamination traps append below as they are hit.)_
 
 ## Contracts
 
