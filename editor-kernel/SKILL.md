@@ -45,9 +45,13 @@ All mutations go through the kernel's transaction API. Undo is implemented once 
 
 Chokidar watcher + REST for JSON read/write + WebSocket for change events + static asset serving. **Reason:** browsers cannot watch folders. The File System Access API is Chromium-only, permission-prompty, and cannot push change events — so the "save a PNG and watch it appear" workflow is impossible in-browser and trivial with a small Node process. _[seeded 2026-08-11, report §8]_
 
+**Confirmed in build.** The watcher and a read-only tree endpoint were built first, with chokidar 5 on Node 24 and Node's built-in `node:http`. No web framework was added: one read-only route is ~20 lines by hand, and Fastify is worth proposing only when the write API and static asset serving arrive. The WebSocket is likewise deferred until an editor exists to receive events — until then the terminal is the subscriber. Sequencing note for a fresh session: watcher + one GET endpoint is a complete, verifiable first feature; do not build the whole D8 surface at once. _[earned 2026-08-11]_
+
 ### D9: One command starts everything
 
 `npm run editor` starts Vite and the sidecar concurrently. **Reason:** the editor must be ordinary software that runs without AI from day one. If starting it requires a session, the human cannot author content on their own schedule, and the whole division of labor stops working. _[seeded 2026-08-11, report §8]_
+
+**Partially discharged.** `npm run sidecar` exists and takes the project folder as its one argument; `npm run editor` lands when there is a Vite app to start. Two things the one-command rule implies in practice, learned by writing it: the command must **print the absolute path it resolved**, because "which folder is it actually watching" is the first question a human asks and a relative argument does not answer it; and every refusal to start must be **one plain sentence naming the path or value at fault**, never a stack trace. Config resolution is therefore a pure function returning a result object, with the process exiting in the entry point only — that is what makes the refusals testable. _[earned 2026-08-11]_
 
 ### D10: Sidecar first, Tauri later
 
@@ -97,6 +101,18 @@ The pressure appears when a tool doesn't exist yet and the content is needed now
 
 **Fix/policy:** the genre spec is the fence — if a tool isn't justified by a noun in the spec, it isn't built this cycle. The kernel will become an engine over time; the requirement is that it happen by accretion from shipped needs rather than by anticipation. _[seeded 2026-08-11, report §13]_
 
+### G6: A file watcher's default write-settling delay is far past "noticed within a second"
+
+Chokidar's `awaitWriteFinish` is what stops a half-written PNG being announced while Photoshop is still saving it — but its default `stabilityThreshold` is 2000ms, which silently turns a sub-second requirement into a two-second one. **Fix/policy:** set it explicitly (200ms was measured to land the notice ~250ms after the save completes, and is still far longer than the gap between writes in a slow save). Never leave it at the default, and never turn it off — off means the editor sees truncated files. _[earned 2026-08-11, chokidar 5.0.0]_
+
+### G7: No operating system reports a rename as a rename
+
+A rename arrives as an unlink of the old name plus an add of the new one. Any code that tries to present renames as a single event is inventing a correlation the OS did not give it. **Fix/policy:** report the two events honestly and say so in the UI/banner text, so the human is not confused by seeing their one action produce two lines. Chokidar's `atomic` option coalesces unlink+add **at the same path** (editors that save via temp-file swap) — it does not and cannot pair up a real rename. _[earned 2026-08-11, chokidar 5.0.0]_
+
+### G8: Path separators leak the authoring machine into the data
+
+Windows produces `assets\textures\knight.png`, macOS produces `assets/textures/knight.png`, and the same project then serializes two different ways depending on who saved last. **Fix/policy:** one conversion helper at the boundary, forward slashes in every path that reaches JSON, a terminal, or a test, and an explicit assertion in the test suite that no emitted path contains a backslash. This has to be settled in the first format, because every later format inherits the convention. _[earned 2026-08-11]_
+
 ---
 
 ## Contracts
@@ -108,6 +124,11 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/CLAUDE.md` — project law: division of labor, AI-generated-content marking rules, folder map, definition of done, session conduct. Outranks this skill on process; this skill outranks it on architecture rationale.
 - `kernel-2d/docs/ai-game-tooling-report.md` — the source these decisions were seeded from. §4 architecture, §5 kernel/genre split and Option C, §8 sidecar shape, §9 the vibe-coding contract.
 - `gamedev-skills/vendor/phaser4/` — vendored Phaser 4 ground truth. Owned by `phaser4-runtime`; referenced here only so the kernel's runtime layer knows where authority lives.
+- `kernel-2d/sidecar/config.ts` — how the sidecar is pointed at a project folder, and every reason it will refuse to start. Loopback host and default port live here.
+- `kernel-2d/sidecar/watcher.ts` — the change-event shape (`FileEvent`) and the write-settling policy. This is the payload the WebSocket will carry when it lands, so change it deliberately.
+- `kernel-2d/sidecar/tree-schema.ts` — the file-tree format served by `GET /tree`. Owned by `text-formats`.
+- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /` and `GET /tree`.
+- `kernel-2d/sidecar/ignore.ts` — what the sidecar never lists and never watches.
 
 **Not yet written** — these are the kernel's core contracts and land as the corresponding sessions build them. Until a path appears here, the contract does not exist and must not be assumed:
 
@@ -115,4 +136,4 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `PrefabSchema` — reusable entity templates.
 - `MetaSchema` — the `.meta` sidecar format.
 - The transaction API surface — the single entry point for all document mutation (D7).
-- The sidecar REST/WebSocket API — read/write and change-event shapes (D8).
+- The sidecar's write API (JSON read/write, static asset serving) and its WebSocket change feed — the read side exists (above); these do not.

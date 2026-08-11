@@ -7,14 +7,33 @@ description: The JSON/Zod format playbook for game-editor documents — how on-d
 
 The playbook for the editor's text data formats — the JSON shapes that editor documents take on disk and the Zod schemas that validate them. This skill governs how formats are structured, validated, versioned, and migrated over time so that documents written by one version of the editor stay readable by the next. Content is earned from real format-design sessions, never invented.
 
+Targets Zod 4.x.
+
 ## Decisions
 
-_None recorded yet. Filled via dual-write as the kernel is built._
+### T1: Every document carries a `format` string and a `version` number, both as literals in the schema
+
+An unknown version fails to parse loudly rather than being read on a hope. **Reason:** the alternative is a document from a future editor being partially understood by an older one, which is the quiet path to data loss. Making both literals in the schema means the check costs nothing to write and cannot be forgotten — a migration step later has an unambiguous thing to switch on. _[earned 2026-08-11, first applied to the file-tree format]_
+
+### T2: Recursive shapes are a TypeScript interface plus a `z.ZodType<T>` annotation, with `z.lazy` for the recursive field
+
+Zod cannot infer a type that refers to itself, so the interface is written by hand and the schema is annotated with it. **Reason:** this keeps D6 intact — the schema is still the only definition, and the annotation is what forces the compiler to reject an interface that drifts from it. Writing the interface with `z.infer` instead does not work, and dropping the annotation lets the two drift apart silently. _[earned 2026-08-11, Zod 4.4.3]_
+
+### T3: Paths inside documents are project-relative and forward-slashed, always
+
+There is one conversion helper at the boundary and nothing else constructs a path string that reaches JSON. **Reason:** otherwise the same project serializes differently depending on which machine saved it, and every downstream comparison — diffs, tests, asset lookups — has to handle both. See `editor-kernel` G8. Absolute paths appear only in fields explicitly documented as machine-local, never in references. _[earned 2026-08-11]_
+
+### T4: A format that is only ever served, never stored, still gets a schema
+
+The file tree is computed per request and written to no file, and it is still defined as a Zod schema rather than a TypeScript type. **Reason:** the consumer is a separate process (the editor, or a human with a browser), so the shape is a contract across a boundary regardless of whether it lands on disk — and the round-trip test that guards it is only possible if a validator exists. _[earned 2026-08-11]_
 
 ## Gotchas
 
-_None recorded yet. Filled via dual-write as the kernel is built._
+### F1: A round-trip test proves the schema and the writer agree about what is kept, not that nothing was dropped
+
+Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify(x)))` will happily return a document with a writer's extra field removed, and the test still passes if the comparison is made against the stripped value. **Fix/policy:** compare the round-tripped result against the **original** object, not against a re-parse of itself — that is the comparison that fails when a writer emits a field the schema does not know about. _[earned 2026-08-11, Zod 4.4.3]_
 
 ## Contracts
 
-_None recorded yet. Reference kernel-repo schema file paths here; never paraphrase schemas as prose._
+- `kernel-2d/sidecar/tree-schema.ts` — the file-tree format: `ProjectTree`, `DirectoryNode`, `FileNode`, and the format/version literals. The first format in the kernel, and the worked example of T1–T4.
+- `kernel-2d/tests/sidecar/tree-schema.test.ts` — the round-trip test every subsequent format copies.
