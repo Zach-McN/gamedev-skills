@@ -25,9 +25,15 @@ The editor imports the runtime as a library and instantiates it in the center pa
 
 No binary project database, no hidden index of record. **Reason:** three compounding payoffs — git-diffable history, and the ability for a session to inspect live game state with `grep` instead of loading it through the editor. The third is context economics: a well-factored text project lets a session read the schema rather than the codebase, which is what keeps sessions cheap as the kernel grows. _[seeded 2026-08-11, report §3/§4]_
 
+### D16: Modules compiled into the browser may not reach for anything Node-only, even for a type
+
+The schemas are shared between the sidecar and the editor. A shared module that type-imports a Node-facing one drags the whole graph into the browser project, and `tsc` reports it as a pile of "cannot find module 'node:path'" errors in files nobody touched. The fix is always the same and always in the same direction: the **shared module owns the vocabulary, and the Node module imports it** — not the reverse. Display helpers used by both the terminal and a panel move into their own dependency-free module rather than being duplicated. **Reason:** the two TypeScript projects (`editor-ui` U4) are what enforce this, and they only enforce it if the boundary is respected in the import direction; a shared module that quietly depends on Node is a browser build waiting to break. _[earned 2026-08-11]_
+
 ### D4: Sidecar `.meta` files; the asset browser mirrors the folder 1:1
 
 The binary lands wherever the human put it from Photoshop or Blender. A JSON sidecar beside it (`knight.png` + `knight.png.meta`) holds import settings: slicing, pivot, filtering, collider generation. No import step, no copy, no rename. **Reason:** the folder *is* the database. The editor's only privilege over the human's files is annotation — the moment it starts moving or rewriting them, the 1:1 guarantee dies and the human loses the ability to work in their own tools without the editor's permission. _[seeded 2026-08-11, report §4/§8]_
+
+**Confirmed in build: the mirror includes the sidecars.** The asset browser lists `.meta` files as the ordinary files they are. It is tempting to hide them for tidiness, and it is wrong: a browser that silently omits part of the folder is no longer a mirror, and the human then has files on disk the editor has taught them not to expect. Folding a sidecar into the row of the asset it annotates is a presentation job for the feature that gives those files meaning — not a reason to drop them from the tree. The ignore list stays what it was: tooling junk only, never anything a human might have authored. _[earned 2026-08-11]_
 
 ### D5: References carry both a stable ID and a human-readable path
 
@@ -46,6 +52,8 @@ All mutations go through the kernel's transaction API. Undo is implemented once 
 Chokidar watcher + REST for JSON read/write + WebSocket for change events + static asset serving. **Reason:** browsers cannot watch folders. The File System Access API is Chromium-only, permission-prompty, and cannot push change events — so the "save a PNG and watch it appear" workflow is impossible in-browser and trivial with a small Node process. _[seeded 2026-08-11, report §8]_
 
 **Confirmed in build.** The watcher and a read-only tree endpoint were built first, with chokidar 5 on Node 24 and Node's built-in `node:http`. No web framework was added: one read-only route is ~20 lines by hand, and Fastify is worth proposing only when the write API and static asset serving arrive. The WebSocket is likewise deferred until an editor exists to receive events — until then the terminal is the subscriber. Sequencing note for a fresh session: watcher + one GET endpoint is a complete, verifiable first feature; do not build the whole D8 surface at once. _[earned 2026-08-11]_
+
+**Amended: server-sent events, not a WebSocket.** The change feed is `GET /events`, an SSE stream. **Reason:** changes only ever travel one way — the sidecar tells the editor what moved — and SSE is the shape of that problem exactly. It costs no dependency (a WebSocket server needs `ws`), and the browser's own `EventSource` reconnects by itself, which is reconnect logic not written and therefore not wrong. The editor→sidecar direction is REST, where it was always going to be. Revisit only if something genuinely needs the editor to push a stream back; nothing does yet. Two things that had to be got right: the server must end open streams before `close()`, or shutdown waits forever on a response that by design never ends; and the heartbeat timer must be `unref`'d, or an idle stream keeps the process alive. _[earned 2026-08-11]_
 
 ### D9: One command starts everything
 
@@ -107,6 +115,8 @@ Duplication, dead code, and creeping complexity are not caught by behavior tests
 
 The pressure appears when a tool doesn't exist yet and the content is needed now. **Fix/policy:** the rule is absolute (D14) — the answer to missing tooling is the tool, not the content. Note the failure is retroactive: once prompt-authored data is in the project, no later tool work restores the provenance of what shipped. _[seeded 2026-08-11, report §3]_
 
+**The generated-sample case, and where its line sits.** Sample content for testing a tool is legitimate and gets generated by a **script**, not by a prompt — deterministic, re-runnable, and reviewable as code. Three rules learned writing one. It must **refuse to touch any file lacking a generated marker**, which is what makes it safe to re-run against a folder somebody has since worked in. It must produce **byte-identical output on every run**, so seeded randomness and a passed-in date, never `Math.random()` or `new Date()` at the point of use — otherwise re-running churns the folder and the noise hides real changes. And it must not **fake a format that has no schema yet**: placeholder JSON says it is a placeholder, because plausible-looking contents are how a wrong format quietly becomes precedent. The same restraint applies to file types — no fabricated `.psd` or `.aseprite`; a file claiming to be something it is not is a trap for whoever opens it. _[earned 2026-08-11]_
+
 ### G5: Scope creep toward "building an engine" has no natural stopping point
 
 **Fix/policy:** the genre spec is the fence — if a tool isn't justified by a noun in the spec, it isn't built this cycle. The kernel will become an engine over time; the requirement is that it happen by accretion from shipped needs rather than by anticipation. _[seeded 2026-08-11, report §13]_
@@ -138,7 +148,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/watcher.ts` — the change-event shape (`FileEvent`) and the write-settling policy. This is the payload the WebSocket will carry when it lands, so change it deliberately.
 - `kernel-2d/sidecar/tree-schema.ts` — the file-tree format served by `GET /tree`. Owned by `text-formats`.
 - `kernel-2d/sidecar/status-schema.ts` — the status format served by `GET /`: which project is open and what else this sidecar serves. The first format read by both halves of the system.
-- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /` and `GET /tree`.
+- `kernel-2d/sidecar/event-schema.ts` — the change format carried by `GET /events`, and the home of the change vocabulary (D16).
+- `kernel-2d/sidecar/feed.ts` — the hand-off from the watcher to everything listening: the terminal, and every open editor window.
+- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`.
 - `kernel-2d/sidecar/start.ts` — bringing the sidecar up as a library rather than as a command, which is what lets the editor launcher host it in-process (D9).
 - `kernel-2d/sidecar/ignore.ts` — what the sidecar never lists and never watches.
 - `kernel-2d/scripts/editor.ts` — the one command (D9).

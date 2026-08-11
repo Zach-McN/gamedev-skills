@@ -27,6 +27,18 @@ A status strip carries the project's short name, its full resolved path, and a l
 
 `tsconfig.json` covers `sidecar/`, `scripts/`, `tests/` and the build configs (NodeNext, explicit `.js` extensions on relative imports); `tsconfig.editor.json` covers `editor/` (bundler resolution, DOM lib, `react-jsx`, extensionless relative imports); both extend one `tsconfig.base.json` holding the strict flags. `npm run typecheck` runs both. **Reason:** no single config serves both — NodeNext demands the `.js` extension that bundler-resolution code should not carry, and the DOM lib has no business in the sidecar. Files shared across the boundary (schemas) are imported with each side's own convention. _[earned 2026-08-11]_
 
+### U5: A panel that changes re-reads the whole thing rather than patching its copy
+
+When the sidecar reports a change, the Assets panel fetches the entire folder again instead of applying the change to the tree it already holds. **Reason:** patching means a second piece of code that decides what the folder contains, and the two eventually disagree in a way nothing reports — the same failure as serialization drift, one layer up. A full re-read is one reader, always right by construction, and a scan of a game project is cheap next to the second the human is willing to wait. Revisit only when a project is big enough that the read is measurably late, and then measure rather than assume. _[earned 2026-08-11]_
+
+### U6: Bursts are settled before acting on them, and the timing budget is stated where it is spent
+
+Change events arrive in bursts — copying a folder in fires one per file — so the re-read is debounced by 75ms. That number is spent out of the human's one-second budget, alongside the watcher's 200ms write-settling delay (`editor-kernel` G6), and both are written down where they are chosen. **Reason:** the budget is the acceptance criterion, and a session that spends 300ms of it without noticing is how a sub-second requirement quietly becomes a two-second one. _[earned 2026-08-11]_
+
+### U7: A panel that has lost its feed keeps showing what it has, labelled
+
+When the change stream drops, the Assets panel keeps the tree on screen and says it may be out of date, rather than blanking or silently pretending it is current. **Reason:** stale-but-labelled is more useful than empty, and both are far better than stale-and-confident. Same reasoning as U3, and the two states are distinct: `unavailable` means never got a folder at all, `ready` with the feed down means this was true a moment ago. _[earned 2026-08-11]_
+
 ## Gotchas
 
 ### UG1: Dockview's layout is computed inside `requestAnimationFrame`, so a non-compositing surface freezes it at 100×100
@@ -49,7 +61,9 @@ Dockview tabs render a close affordance by default, and the shell has no panel m
 
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
 
-- `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1).
+- `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank.
+- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, and the worked example of a panel with a body.
+- `kernel-2d/editor/shell/useProjectTree.ts` — the folder, kept current: the re-read of U5, the settle of U6, and the stale state of U7.
 - `kernel-2d/editor/shell/App.tsx` — the shell: status strip above, docking layout below.
 - `kernel-2d/editor/shell/useSidecarStatus.ts` — how the editor learns which project it is connected to, and what it does when the answer stops coming (U3).
 - `kernel-2d/editor/shell/StatusStrip.tsx` — the connection line, including the `data-testid` hooks the browser suite reads.
