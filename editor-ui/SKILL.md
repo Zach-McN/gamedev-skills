@@ -132,6 +132,16 @@ Three things that are not obvious until the second gesture exists:
 
 The threshold matters too — a press that never travels more than a few pixels is a click and must not nudge what it selected. _[earned 2026-08-12]_
 
+### U22: A control that makes a file shows the whole path before it commits, and takes the destination from the selection
+
+The Assets panel gained a name field, a button, and a line reading "Will make `scenes/level-03.json`" that updates as the name is typed. Three rules came out of building it:
+
+1. **The destination is the selected folder** — or the selected file's folder, or the top of the project — and is looked up in the tree rather than guessed from the path string. **No folder name is written into the editor.** `scenes/` is a convention in the folder map and not a fact this code is allowed to rely on, the same ordering as U11: the editor decides what a file is from what it says, and where a file goes from what the human picked.
+2. **The whole path is on screen before anything is committed.** This is the one control that puts a file in somebody's project, and "where did it go?" should never be a question answered by searching. It is also the only affordance that explains the destination rule without a paragraph of help text.
+3. **The refusal is the service's own sentence, shown as it arrives.** The service knows things the panel does not — whether the name is taken, whether the folder exists — and paraphrasing them in the panel is two descriptions of one rule, of which one will go stale.
+
+The consequence to say out loud rather than paper over: making a file is not an edit to a document, so **Ctrl-Z does not take it back** (`editor-kernel` D7). _[earned 2026-08-12]_
+
 ### U10: A panel always says something, and "nothing to show" is a sentence rather than a blank
 
 Every state gets prose: a folder, a document whose format has no inspector yet, a file the editor does not import, an asset whose settings have not landed, a settings file that will not parse, and nothing selected at all. **Reason:** a blank panel is indistinguishable from a broken one, and in a kernel where most formats do not exist yet, "there is nothing here" is the *common* case rather than the exceptional one. Two things that make the sentences worth reading: name what the thing is (a scene, a sound) rather than what it lacks, and say what would change it ("its own inspector arrives with the scene format"). When settings cannot be parsed, **show the file's text** — being told a file is unreadable without being shown it forces the human out of the editor to find out why. _[earned 2026-08-11]_
@@ -213,7 +223,7 @@ Dockview tabs render a close affordance by default, and the shell has no panel m
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
 
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now.
-- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, and the worked example of a panel with a body.
+- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, and U22: the one control that puts a file in a human's project.
 - `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store.
 - `kernel-2d/editor/panels/TextureSettings.tsx` — the first editable controls, hand-written, and the worked example of U14. Every one of them goes through the transaction API and none of them knows undo exists.
 - `kernel-2d/editor/shell/useUndoShortcuts.ts` — U13, and the only keyboard handler in the editor.

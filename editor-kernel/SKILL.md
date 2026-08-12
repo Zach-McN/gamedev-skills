@@ -115,6 +115,17 @@ Still three lines, and it stays three lines as prefabs and data tables arrive �
 1. **It never creates a file.** A path with nothing at it is refused rather than filled in. Making a new scene is a feature that does not exist yet; when it does it should be a deliberate one rather than a side effect of a typo in a path.
 2. **It only replaces a document with one of the format that is already there**, which means reading and parsing the existing file before writing. Without this, a perfectly valid scene document sent at the path of somebody's PNG overwrites their art — the document is valid, the path is inside the project, and *every other check passes*. This is the failure to hold in mind when widening any write: the checks were all about the thing being written and none of them about the thing being written over.
 
+**Widened once more, to four lines, when levels had to be startable — and the shape of the widening is the lesson.** Making a file is a *separate request* (`POST /document`) from replacing one (`PUT /document`), not a flag and not a fall-through:
+
+- of its own accord, creates a `.meta` when an asset has none, and deletes a stranded one at startup;
+- **creates one file the editor names, when there is nothing at that path and the document is valid in a format this editor knows;**
+- replaces the whole contents of one file the editor names, when that file already exists and the document is valid and of the format already there;
+- never modifies anything else, and never changes a file on its own initiative.
+
+**Reason:** the obvious design is one write that creates when there is nothing there, and it means a single mistake in the editor turns "make a new level" into "erase this level". Kept apart, the create refuses when anything is at the path and the replace refuses when nothing is, so a confused caller gets a sentence instead of a destroyed afternoon. That generalises into the question to ask of every widening of this file: **not "is this operation safe?" but "what does this operation do if the caller is confused about which one it wanted?"** Both halves get tested from both sides, or only the half somebody remembered is real (V13).
+
+Two guards belong to the create specifically. **It never makes a folder** — a path whose parent is not already there is refused, because creating folders is a second privilege wearing the first one's clothes and a mistyped path would quietly grow a tree of them. And **it is exclusive at the filesystem** (`wx`), not an existence check followed by a write: the check-then-write version has a window that two editors on one folder land in, and `EEXIST` is not an error there, it is the answer. _[earned 2026-08-12]_
+
 **Keyed on the document's own `format` string, never on the path.** Where a file sits in the folder tree is a convention (`scenes/` is in the folder map, not in the code); what a document says it is, is a fact — the same ordering as `editor-ui` U11, and the first real payoff of the format literal every document has carried since T1. A consequence worth wanting: "this is not a format I know" and "this is a format I know and the file is malformed" are then *different* answers with different sentences, where a single discriminated union over all known formats would have collapsed them into one unhelpful "invalid". _[earned 2026-08-11]_
 
 ### D5: References carry both a stable ID and a human-readable path
@@ -151,6 +162,8 @@ All mutations go through the kernel's transaction API. Undo is implemented once 
 - **Adding and deleting are edits.** This is where a session reaches past the transaction API, because *creating* something feels categorically different from *editing* it. It is not: an add is a recipe that pushes onto a list, a delete is one that splices, a reorder is one that moves a slot, and Ctrl-Z covers all three for free. A tool that writes its own inverse for a create is a defect whether or not it works (G2).
 - **A recipe re-finds its target by id rather than closing over an index.** Between the click and the recipe running, a text editor may have changed the file underneath — and an index into a list that has moved on deletes the wrong thing. The cost is a `findIndex`; the failure mode is silent and destructive.
 - **What is selected after an edit is not part of the edit.** Selecting a newly added entity happens *outside* the transaction, or undo would restore a selection as well as a document, which is exactly what `editor-ui` U8 exists to prevent.
+
+**Where the line falls, stated because the first thing outside it arrived: making a file is not an edit.** The store holds documents that are *open*, and a file that does not exist yet is not one of them — so creating one does not go through the transaction API, does not appear in the map until the watcher reports it, and **is not undoable**. That is the honest answer rather than a gap: Ctrl-Z reverses changes to documents and has never deleted a file, and teaching it to would make one key mean two very different sizes of thing. Say so in the hand-off; a human who assumes otherwise finds out at the worst moment. The tell for the next case: if the operation's inverse is "delete something", it does not belong on this stack. _[earned 2026-08-12]_
 
 **Third payoff, and the one that made the bet look cheap: a continuous gesture.** Dragging a sprite around the viewport writes a position on every pointer move, and it is *one* press of Ctrl-Z — because a drag is a merge key held open and sealed on release, which is the machinery a text field already used for a run of keystrokes. No undo code was written for it. Two things a gesture adds to the rules above. The merge key has to carry the entity's id as well as the field, or dragging one sprite and then another is one step. And the recipe re-finding its target by id stops being a precaution and becomes load-bearing: a drag lasts seconds, which is long enough for a text editor to save over the file underneath it. _[earned 2026-08-12]_
 
@@ -266,6 +279,12 @@ Two more guards belong beside it, for the same reason and with different timing:
 
 Re-exporting a PNG from Photoshop very often lands on the identical byte count. Anything that caches a file — a preview keyed by URL, most obviously — will keep showing the old contents, and the human's edit appears simply not to have happened. **Fix/policy:** carry the modification time alongside the size wherever the editor describes a file (`FileNode.mtimeMs` in the file-tree format), and use it as the cache key. Do not round it to whole milliseconds: some filesystems report finer than that, and rounding is the schema quietly disagreeing with `stat`. A change-event counter is the tempting alternative and is worse — it is a second piece of bookkeeping that goes wrong when an event is missed, whereas the timestamp is simply true. _[earned 2026-08-11]_
 
+### G12: `structuredClone` throws on a draft, so a recipe that copies something must copy it another way
+
+Duplicating an entity inside a transaction is the natural place to reach for `structuredClone`, and it fails — the recipe's argument is an immer draft, which is a Proxy, and a Proxy cannot be structurally cloned. It compiles, it type-checks, and it throws the first time the button is pressed with a `DataCloneError` that names nothing you wrote.
+
+**Fix/policy:** copy through JSON, and put the copy function next to the *format* rather than in the panel with the button. Both halves matter. JSON is faithful here by construction — a document is JSON by definition — and it reads through a draft the way any property access does. And what has to survive a copy is a fact about the format, not about the tool: everything, including component types this kernel has no schema for. A copy that quietly dropped one would look exactly like working, and the loss surfaces weeks later to somebody with no reason to suspect the Duplicate button. _[earned 2026-08-12, immer 11]_
+
 ### G8: Path separators leak the authoring machine into the data
 
 Windows produces `assets\textures\knight.png`, macOS produces `assets/textures/knight.png`, and the same project then serializes two different ways depending on who saved last. **Fix/policy:** one conversion helper at the boundary, forward slashes in every path that reaches JSON, a terminal, or a test, and an explicit assertion in the test suite that no emitted path contains a backslash. This has to be settled in the first format, because every later format inherits the convention. _[earned 2026-08-11]_
@@ -298,7 +317,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/meta-files.ts` — the whole of D17 in one file: create-when-missing, the startup sweep, the one write the editor can ask for, and the path validation everything from the browser passes through.
 - `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`, `GET /document?path=…`, `GET /asset?path=…`, and the two PUTs to `/meta` and `/document` — the only non-GETs this service answers at all.
 - `kernel-2d/sidecar/document-view-schema.ts` — the registry of document formats the editor reads and writes, keyed by the `format` the document itself carries (D22), and the answer `GET /document` gives about one.
-- `kernel-2d/sidecar/document-files.ts` — D22 in one file: the widened write, the guard that it never creates, and the guard that it only replaces a document with one of the format already there.
+- `kernel-2d/sidecar/document-files.ts` — D22 in one file: the create and the replace kept apart, and every guard that keeps each of them from doing the other's job.
 - `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema`: the flat entity list, the transform, the open component map and the registry of components the kernel knows. Owned by `text-formats`.
 - `kernel-2d/runtime/scene/scene-view.ts` — the second renderer, and its report of which entities it drew, where, through which camera, and how much level there turned out to be.
 - `kernel-2d/runtime/scene/entity-layer.ts` — documents into drawn objects: matched by id, updated in place, depth from list order.
@@ -318,7 +337,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 **Not yet written** — these are the kernel's core contracts and land as the corresponding sessions build them. Until a path appears here, the contract does not exist and must not be assumed:
 
 - `PrefabSchema` — reusable entity templates. The document endpoint is already shaped to take it: adding one is a schema plus a line in the registry.
-- Making a new scene, and duplicating an entity. Levels can now be laid out by dragging, and there is still no way to start one without hand-writing JSON — which the methodology forbids.
+- Renaming, moving or deleting a file from the editor. A level can be made and edited; getting rid of one is still a job for the folder. Each of those is a fresh widening of the write privilege and should be argued for on its own.
 - Parenting. The entity list is flat and ordered, which is the shape a `parent` field can be added to without a migration; nothing can set one yet, so nothing carries one.
 - A fixup tool for references whose files have moved. D5's id is read and compared today, and there is nothing that reconciles the pair.
 - Play mode. D2's second sentence is still unspent: nothing yet destroys an edit scene and boots the real loader.

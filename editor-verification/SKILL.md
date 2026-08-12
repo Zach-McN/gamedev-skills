@@ -190,6 +190,8 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/editor/scene-camera.spec.ts` — V19: a camera asserted without a pixel, one test per acceptance criterion, and the settled gesture helpers of W13.
 - `kernel-2d/tests/editor/drag-place.spec.ts` — V20: picking and placing asserted in the level's own units, with the zoom-invariance test that catches a camera-blind implementation.
 - `kernel-2d/tests/shell/drawn-entities.test.ts` — what can be clicked, held to being the same rectangle the outline is drawn from.
+- `kernel-2d/tests/editor/new-scene.spec.ts` — V21: making a level, and every way it is refused.
+- `kernel-2d/tests/sidecar/document-endpoint.test.ts` — the create and the replace held to refusing each other's job, refusals first.
 - `kernel-2d/tests/runtime/frames.test.ts` — the frame geometry, held to "every frame reported is a whole frame, and every pixel outside one is counted".
 - `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
 - `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and the runtime/editor boundary as a test rather than a promise (`editor-kernel` D20).
@@ -202,6 +204,14 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/editor/test-project.ts` — the throwaway project the browser tests point the editor at, built at run time under `tests/.tmp/` and git-ignored (V10).
 - `kernel-2d/tests/sidecar/events.test.ts` — the change feed end to end: real folder, real watcher, real HTTP stream, including the reader that parses server-sent frames and the ordered teardown a live stream needs.
 - `kernel-2d/tests/scripts/sample-project.test.ts` — how a content generator is held to its promises: real file formats, identical bytes on every run, and never touching an unmarked file.
+
+### V21: A create is tested from the side where it refuses, and a picture waits for everything it is a picture of
+
+Two things learned adding the first feature that puts a file into a project folder.
+
+**The interesting half of "it makes a file" is "it will not make this one."** The happy path is one assertion; the guard that stands between the feature and somebody's finished level is that asking for a name already taken changes nothing — checked against the existing file's bytes *and* its timestamp (V12), because identical contents alone would also pass for a file that had been rewritten with the same text. Same for the folder it declined to create: assert the folder is *not there*, not merely that the file is not. And since creating and replacing are two separate requests (`editor-kernel` D22), each is tested for refusing to do the other's job — that pair is the whole safety argument, and testing one side of it proves half of nothing.
+
+**A screenshot must wait for every panel in it, not just the first one to settle.** The picture of a newly-made level was taken as soon as the scene opened, and caught the Inspector saying the file was not in the project — true of the folder listing it was holding, which arrives a beat later by way of the watcher. The image looked like a bug that did not exist. Wait for the slowest thing in frame; a screenshot that documents a transient is worse than no screenshot, because it is the artefact somebody reaches for when they are already suspicious. _[earned 2026-08-12]_
 
 **The screenshot habit.** A test that asserts nothing and simply writes a full-window screenshot to its output path. It is not a visual-regression baseline — those are brittle across machines — it is a picture to look at when something is reported as looking wrong, which beats reasoning about the source.
 
