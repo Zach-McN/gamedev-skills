@@ -29,6 +29,29 @@ The editor imports the runtime as a library and instantiates it in the center pa
 
 _[earned 2026-08-11]_
 
+**The second sentence, spent — and what it turned out to be worth.** Play mode arrived: the runtime's own loader (`runtime/scene/load-scene.ts`) opens a level file, follows its prefab and texture references, reads each `.meta` for itself, and hands the renderer a request. Pressing Play swaps which half of the editor produced that request and changes nothing else — same renderer, same canvas, same camera, so Stop has nothing to tear down.
+
+Three things it cost, none of them visible from the decision as written:
+
+1. **"There is only one renderer, so the preview cannot lie" is a weaker claim than it sounds, and it stops being true the moment play mode exists.** One renderer means the *drawing* cannot diverge. It says nothing about the code that decides **what to draw**, and there are now two of those: the editor's resolution of a level, and the runtime's. That is D25's failure one layer out, and it is invisible — both halves produce something that looks like a level. So the agreement is **checked rather than argued for**: the editing view's own report is kept at the instant Play is pressed and compared with the running level's, entity by entity, in the units the human sees ("Knight is drawn 4px left of where the editor drew it"). A divergence is named under the canvas and fails the suite. See `editor-verification` V24.
+2. **The two loaders are deliberately not merged**, and the reason needs saying so a later session does not "fix" it. The editor's resolution is incremental, reactive and per-file, because a prefab edited in the Inspector has to land in the picture with nothing told to refresh (D25). The runtime's is a one-shot batch read with no store, no folder tree and no subscriptions, because that is what a shipped game has. Forcing either through the other breaks the thing that makes it right. The comparison is what keeps them honest, and it is far cheaper than the abstraction that would have unified them.
+3. **A subject compared by value needs the derivation in the key as soon as there are two derivations.** The editor compares the renderer's request by `JSON.stringify`, so that a neighbouring file changing does not redraw. When the two halves *agree* — the intended outcome — the two requests stringify identically, so pressing Play compared by value, found no change, and drew nothing: the editing picture stayed on screen wearing play mode's caption. **The most misleading failure this feature could have, and it appears exactly when everything else is working.** The fix is one string prefix (`editing` / `playing`); the lesson is general.
+
+_[earned 2026-08-12]_
+
+### D26: What the runtime cannot do for itself arrives as an argument, and the editor's version is an adapter
+
+The scene loader takes a `ProjectReader`: read one JSON file by project-relative path, and answer with a token that changes when an asset's bytes do. The editor answers out of the development service (`kernel-2d/editor/shell/project-reader.ts`); a shipped game answers with `fetch` and a build number.
+
+**Reason:** D1 says the runtime contains no editor code, and the obvious reading is "do not import the editor". The reading that actually bites is **do not import the editor's *situation*** — a service on localhost, a folder tree held in React state, an endpoint that addresses import settings by the path of the file they annotate. A loader that knew any of that would be untestable outside a browser and unusable outside the editor while importing nothing forbidden. Two functions is the whole seam.
+
+Four things learned building it:
+
+1. **The adapter is allowed to be an adapter.** The loader asks for `knight.png.meta`, because that is the file on disk and that is what an export will fetch; the service addresses it as `knight.png`, so the editor's reader takes the suffix off. Pushing that quirk into the loader "so both sides agree" would put a development service's URL scheme inside the shipping layer.
+2. **A seam moves some tests somewhere the product cannot reach.** In the editor the service parses documents before the runtime sees them, so the runtime's *own* validation never runs in the browser and a level broken by hand is described by the service's sentence rather than the loader's. That path is only real in an export — so it is covered by unit tests that hand the loader garbage directly. Ask it of every injected seam: which side of this does the running product actually exercise?
+3. **The version token must come from the same place as everybody else's.** It is half the renderer's texture cache key, so a loader that invented its own would upload one file to the graphics card twice and show a texture from before it was re-saved. Shared cache key, not a private detail.
+4. **Fatal is only the document you were asked for.** A missing prefab, a texture with no import settings beside it, a reference pointing at a file that is no longer the one it was written against — all named, none fatal, and the level still runs. Not leniency for its own sake: the editor's own resolution already fails that way, and the two pictures are only comparable if both halves fail identically. _[earned 2026-08-12]_
+
 ### D20: A module the runtime needs lives in `runtime/`, whoever else uses it
 
 The `.meta` format was written for the sidecar and lived there. The moment the runtime had to read import settings it had to move, because the sidecar is development-only and `runtime/` importing it would have broken D1 in the first file of the new layer. It now sits at `kernel-2d/runtime/formats/meta-schema.ts`, and the sidecar and editor both import it from there.
@@ -367,6 +390,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/scene-prefabs.tsx` — D25 as built: which prefabs a level points at, read into the store, merged by the format's own function, and the three things that can be wrong with a reference.
 - `kernel-2d/editor/shell/usePlacePrefab.ts` — one gesture, two places to reach it from, and why the prefab comes from the store rather than from what the level already references.
 - `kernel-2d/runtime/scene/scene-view.ts` — the second renderer, and its report of which entities it drew, where, through which camera, and how much level there turned out to be.
+- `kernel-2d/runtime/scene/load-scene.ts` — **D2's second sentence**: a level opened by the runtime itself. The `ProjectReader` seam (D26), what is fatal and what is merely named, and the sentence each problem gets.
+- `kernel-2d/editor/shell/project-reader.ts` — the loader's one adapter to the development service, and the note about which half of it the browser never exercises.
+- `kernel-2d/editor/shell/play-mode.tsx` — what Play does before it reads the file, and why a refused save stops it.
+- `kernel-2d/editor/shell/play-comparison.ts` — "what I see matches what the editor was showing me", as arithmetic over two reports from one renderer.
 - `kernel-2d/runtime/scene/entity-layer.ts` — documents into drawn objects: matched by id, updated in place, depth from list order.
 - `kernel-2d/runtime/scene/coordinates.ts` — scene space (y-up, bottom-left), the camera (D23), and how the two become screen space. One definition, no Phaser.
 - `kernel-2d/editor/shell/scene-view-context.tsx` — where the view lives: one camera per scene for the life of the window, and the three conditions a scene has to satisfy before it is framed.
@@ -387,5 +414,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Renaming, moving or deleting a file from the editor. A level can be made and edited; getting rid of one is still a job for the folder. Each of those is a fresh widening of the write privilege and should be argued for on its own.
 - Parenting. The entity list is flat and ordered, which is the shape a `parent` field can be added to without a migration; nothing can set one yet, so nothing carries one.
 - A fixup tool for references whose files have moved. D5's id is read and compared today, and there is nothing that reconciles the pair.
-- Play mode. D2's second sentence is still unspent: nothing yet destroys an edit scene and boots the real loader.
+- An export command. Play mode is what makes one possible — the runtime can now open a level and draw it with no editor involved — but nothing yet produces a folder you can ship, and `project.json` is still a placeholder with no startup scene in it.
+- Anything that moves. There is no update loop, no input handling and no component but `sprite`; play mode loads and draws, and stops there.
+- A second vocabulary for the same three failures. The editor's edit-mode resolution and the runtime's loader each describe "missing", "unreadable" and "not the file this was written against" in their own words, in `scene-assets.tsx`, `scene-prefabs.tsx` and `load-scene.ts`. Correct today — the shapes genuinely differ, and the runtime may not import the editor — and the first thing to look at in the next gardening pass (G3, item 3).
 - Inspector controls generated from a Zod schema. The texture settings and the entity fields are both hand-written; there are now two inspectors to generalise *from*, which is the point at which it becomes worth doing.

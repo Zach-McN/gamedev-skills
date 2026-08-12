@@ -190,6 +190,27 @@ Making a level and making a prefab share one name field, one folder rule and one
 
 **Reason:** the *path* is the same question either way, and asking it twice in two rows would imply the answers differ — that prefabs go somewhere levels do not. They do not: `prefabs/` is a convention in the folder map and the editor is not allowed to rely on it (U11's rule, one level up from a filename to a folder name). Keeping the choice in the button also keeps the promise honest, since the path preview stays true whichever is pressed. The name typed becomes the name *inside* the document as well, which is the only sensible default and is editable the moment it opens. _[earned 2026-08-12]_
 
+### U26: Play mode is window state, and a mode that suspends editing suspends it in two places at once
+
+Which level is running, the picture it was started from and whether it matched all live in a context beside the selection and the camera (U8) — never in the document, never in a `.meta`, never in `project.json`. Ctrl-Z cannot see it, and stopping leaves no trace that it happened.
+
+**While it runs, every panel but the Viewport carries `inert`, *and* the module that exports the transaction API refuses an edit.** Two mechanisms, deliberately:
+
+- **`inert` is what the human sees**, and it beats a `disabled` on each control: it covers the whole subtree including whatever a later session adds, and it takes the panel out of the keyboard order, which a pile of `disabled` attributes would each have to remember. The wrapper is `display: contents`, so no box is added and the docking layout is untouched.
+- **The refusal is what makes the guarantee true** whichever control anybody finds a way to reach. It gates the editor's own module (`open-documents.ts`), not the transaction API itself: play mode is a fact about this window, not about the document model, and `documents.ts` should stay readable by somebody who does not know play mode exists. **Undo is gated with the edits** — Ctrl-Z is a change to a document like any other and is written to disk like any other. `adoptFromDisk` stays open, because a file changing underneath the editor is a read.
+
+Two details that only show up on screen. **`inert` is invisible**, so the dimming is not decoration: without it the Hierarchy looks exactly as it does when it works, and the answer to "why is Delete doing nothing" is a caption under a canvas somewhere else. Style it off the attribute, never off a class of your own, so what is out of reach and what looks out of reach are the same set by construction. And **the explanation belongs in one place** — the panel that took the mode over — rather than repeated as a note in each of the four panels that went quiet.
+
+**Reason:** a mode that changes what the whole window will accept has to be visible from wherever the human's hand is and provable from wherever the code is. Neither half does both. _[earned 2026-08-12]_
+
+### U27: "There is a picture" and "the picture is of what I am asking for now" are different questions, and features keep needing the second
+
+A level's textures resolve one at a time, so the same level is asked for several times as it opens and the report in hand is regularly a real report of that level with half of it missing. There is also a render between the last texture arriving and the redraw being *requested*, during which everything looks ready and the picture on screen is of the request before last.
+
+So the renderer's context answers the sharper question directly: `useDrawScene` hands in a key with each request and answers whether what is on screen came from *that* key. Framing waits for it; so does the Play button.
+
+**Reason:** two features reached for the loose version first and were wrong the same way a session apart. Framing a level against half of itself puts it off-centre permanently, and was patched with three ad-hoc conditions inside an effect. Play offered a render too early starts against a baseline the human never saw — so the comparison that is the entire point of the feature checks the running level against a half-drawn one. The tell is a test that passes alone and fails in a full suite run: the race widens when the machine is busy, which is also when nobody is watching. Answer it once, in the context that actually knows, instead of deriving it from "is there a report" at each call site. _[earned 2026-08-12]_
+
 ## Gotchas
 
 ### UG6: React's `onWheel` cannot `preventDefault`, and a middle-button `mousedown` must
@@ -284,7 +305,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/scripts/editor-server.ts` — the editor window's host, port, and open-a-browser knobs, with their environment variable names.
 - `kernel-2d/tsconfig.editor.json` and `kernel-2d/tsconfig.base.json` — the browser half of U4.
 
-- `kernel-2d/editor/store/open-documents.ts` — the one document store per window and the hooks panels read it through. The API itself is `editor-kernel`'s (D7); this is where the UI meets it.
+- `kernel-2d/editor/store/open-documents.ts` — the one document store per window and the hooks panels read it through. The API itself is `editor-kernel`'s (D7); this is where the UI meets it, and where editing is suspended while a level runs (U26).
+- `kernel-2d/editor/shell/play-mode.tsx` — play as window state: what it is, what pressing Play does before it reads the file, and why it never touches one.
+- `kernel-2d/editor/shell/panels.tsx` — every panel declared once, and the wrapper that puts all but the Viewport out of reach while a level runs (U26).
+- `kernel-2d/editor/shell/scene-view-context.tsx` — the scene renderer's context, and `useDrawScene`: the request key that distinguishes two derivations of one level, and the answer to U27.
 
 **Not yet written** — until a path appears here, the contract does not exist and must not be assumed:
 
@@ -298,3 +322,4 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - The panel menu and saved layouts (UG4).
 - A keyboard shortcut registry. There is exactly one handler (U13), and one does not need a registry.
 - Anything that shows the undo stack — a history panel, an Edit menu, an "Undo <label>" caption. The labels exist and `peekUndo`/`peekRedo` expose them; nothing reads them yet.
+- Any control over a level while it is running: a camera that can be moved, a pause, a step, a frame counter, or editing that the running level picks up. Play inherits the editing camera and freezes it, and the rest of the editor goes read-only until Stop.

@@ -103,6 +103,29 @@ Placing a sprite by dragging it is testable without a pixel: the gesture is disp
 
 **The one that catches a whole class of bug is the same drag repeated at a different zoom.** An implementation that never learned about the camera — one screen pixel treated as one level unit — passes every other assertion in the file, because they all happen at whatever zoom the scene opened at. Two practicalities for writing it: express the gesture as `units × scale` so the test says what it means, and **frame the entity before pressing on it at the new zoom**, because zooming about the middle of a level pushes anything near its edge off the panel and the press then lands on nothing. _[earned 2026-08-12]_
 
+### V24: Two loaders of one document are checked by drawing both and comparing the reports, not by diffing the inputs
+
+Play mode gave the kernel a second way to turn a level into a picture: the editor's incremental resolution, and the runtime's own loader. They must agree, and nothing about a disagreement announces itself — both halves produce something that looks like a level. So the editing view's report is kept at the instant Play is pressed and compared with the running level's, entity by entity: same ids, same screen origin, same bounds. The verdict is on the panel (`data-play-match`) and in a sentence a human reads.
+
+**Compare the reports, not the two requests.** The request is the input and the report is the picture, and everything that could go wrong *between* them — a pivot applied differently, a frame cut differently, a texture that decoded on one side only — is invisible to an input diff. It is also cheap in exactly the way V17 describes: the renderer already reports what it drew, so this is arithmetic over two plain objects and one unit test file, with no pixels involved.
+
+Four things that make it a real check rather than a tautology:
+
+- **Both pictures must be through the same camera and the same canvas**, or every difference is real and none of them is about what is being checked. Mismatched camera or size is its own answer — "cannot be checked" — never a silent pass. The feature earns this by freezing the camera while a level runs.
+- **The baseline must be a *settled* picture** (`editor-ui` U27), or the running level is being compared with a half-drawn one and the assertion is meaningless in the direction that looks green.
+- **A tolerance, but a tiny one.** Both numbers come from one renderer, so agreement is exact; the tolerance exists only because the request makes a round trip through JSON. Assert both sides of it — that a thousandth of a pixel passes and a tenth fails — or the tolerance quietly becomes the thing being tested.
+- **Name every difference, not a count.** A verdict that says "3 differences" is a verdict somebody has to reproduce by hand.
+
+_[earned 2026-08-12]_
+
+### V25: "Nothing wrote to my file" is asserted by reading the bytes either side, with the destructive controls pressed in between
+
+Play mode's promise is that a level can be run and stopped with the file untouched. The test snapshots every file the editor is able to write, plays, presses Add and Delete with `force` and Ctrl-Z, stops, waits past the autosave debounce, and asserts the whole snapshot is byte-identical.
+
+Three parts, each load-bearing. **`force` on the clicks**, because an ordinary click on an `inert` control times out and proves nothing — the assertion is about what the press *did*, not about whether it was possible. **The wait past the debounce**, because a write that was scheduled and not yet flushed is exactly the failure being hunted, and a check that runs before the timer would miss it every time. And **the whole snapshot rather than the level**, because the interesting bug is a mode that writes somewhere nobody thought to look — which is also the file nobody would have listed. The same snapshot covers "nothing about play mode is recorded anywhere" for free.
+
+**Reason:** it is the only formulation that tests the guarantee rather than the mechanism. Asserting that a store flag is set tests the flag; asserting the buttons are disabled tests the buttons. Neither would notice a third path to disk. _[earned 2026-08-12]_
+
 ## Gotchas
 
 ### W13: A gesture is many events, so reading right after it reads the middle of it
@@ -161,6 +184,12 @@ The Hierarchy's rows carried `data-entity-id`, and so did the SVG group that out
 
 **Fix/policy:** two ways out, and use both. Name the attribute for what it *is* rather than for what it contains, so the overlay says `data-selected-entity` and cannot collide; and scope the locator to the panel that owns it. Worth checking on sight whenever a second panel starts describing the same objects: the moment two panels talk about entities, their test hooks are in the same namespace. _[earned 2026-08-11, Playwright 1.62.1]_
 
+### W14: The shared restore only covers files the *editor* can write, so a test that removes anything else must put it back itself
+
+V14's snapshot-and-restore walks the sample folder for the extensions the editor is allowed to write — `.meta` and `.json`. A test that deletes a PNG to see what a missing texture does therefore deletes it **for the rest of the run**, and the suite goes red in whichever later spec happens to open a level that used it. It passes on its own, passes in its own file, and fails only in a full run, pointing at code that has nothing to do with the cause.
+
+**Fix/policy:** read the bytes, delete, assert, write them back in a `finally`. Do not widen the shared restore to cover binaries instead — that list is the statement of what the editor is permitted to write, and quietly turning it into "everything a test might touch" costs the reader the one place that answer is written down. _[earned 2026-08-12]_
+
 ### W12: A tab sharing a dockview group is not on screen, so a spec must bring it forward before asserting anything
 
 The Texture tab sits behind the Viewport in the same group. Every assertion about it — the canvas being visible, a caption, an overlay — is against a panel that is not rendering until something activates it. Selecting a texture does that in the product; a spec asserting the empty state *before* selecting anything has to click the tab itself.
@@ -197,6 +226,9 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
 - `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and the runtime/editor boundary as a test rather than a promise (`editor-kernel` D20).
 - `kernel-2d/tests/sidecar/asset-endpoint.test.ts` — the read privilege of `editor-kernel` D21 held to its four lines, refusals first.
+- `kernel-2d/tests/runtime/load-scene.test.ts` — the runtime's loader against a fake `ProjectReader`: no browser, no service, no folder, no renderer — and the only place the runtime's own validation is exercised at all (`editor-kernel` D26, point 2).
+- `kernel-2d/tests/shell/play-comparison.test.ts` — V24 as arithmetic: what counts as the same picture, and each way two pictures can differ named in the human's units.
+- `kernel-2d/tests/editor/play.spec.ts` — V24 and V25 end to end, plus W14: a level run from the file, checked against the editing view, stopped, and the folder proved untouched.
 - `kernel-2d/tests/sidecar/meta-write.test.ts` — the service's editor-driven write held to its edges, with every refusal checked against bytes *and* timestamp (V12).
 - `kernel-2d/tests/sidecar/meta-schema.test.ts` — V7 for the `.meta` format, and the rejections that make it a contract.
 - `kernel-2d/tests/sidecar/meta-files.test.ts` — V12: the sidecar's write privilege held to exactly its three lines, against a real filesystem.
