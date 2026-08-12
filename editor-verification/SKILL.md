@@ -97,6 +97,12 @@ A viewport camera is testable without a single pixel comparison, because the ren
 
 **The one that earns its place is pressing the frame key twice and asserting nothing changed.** Two independent defects both hide from every other assertion in the list and both surface to a human as a key that misbehaves: a level whose measured extent depends on the zoom it was measured at (`phaser4-runtime` P5), and a caption that appears only when something is off screen and so shrinks the canvas the framing is computed against (`editor-ui` UG8). Each produces a framing that is perfectly correct in isolation. Write the second press. _[earned 2026-08-12]_
 
+### V20: A drag is asserted in the level's units, and the test that earns its place is the one at a different zoom
+
+Placing a sprite by dragging it is testable without a pixel: the gesture is dispatched at the outline the renderer reported, and the result is read from the Inspector's fields and from the file on disk. That covers the ordinary claims — it moved, it landed on a whole unit, Alt put it between two, one press of Ctrl-Z took the whole drag back, a click did not nudge it, the position reached the file within the second.
+
+**The one that catches a whole class of bug is the same drag repeated at a different zoom.** An implementation that never learned about the camera — one screen pixel treated as one level unit — passes every other assertion in the file, because they all happen at whatever zoom the scene opened at. Two practicalities for writing it: express the gesture as `units × scale` so the test says what it means, and **frame the entity before pressing on it at the new zoom**, because zooming about the middle of a level pushes anything near its edge off the panel and the press then lands on nothing. _[earned 2026-08-12]_
+
 ## Gotchas
 
 ### W13: A gesture is many events, so reading right after it reads the middle of it
@@ -182,6 +188,8 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/editor/panels.ts` — W12: bringing a tab forward before asserting against it.
 - `kernel-2d/tests/runtime/scene-schema.test.ts` and `kernel-2d/tests/runtime/scene-coordinates.test.ts` — V7 for the scene format, the y-up arithmetic under the pivot assertion, and the camera held to the four properties its acceptance criteria are made of.
 - `kernel-2d/tests/editor/scene-camera.spec.ts` — V19: a camera asserted without a pixel, one test per acceptance criterion, and the settled gesture helpers of W13.
+- `kernel-2d/tests/editor/drag-place.spec.ts` — V20: picking and placing asserted in the level's own units, with the zoom-invariance test that catches a camera-blind implementation.
+- `kernel-2d/tests/shell/drawn-entities.test.ts` — what can be clicked, held to being the same rectangle the outline is drawn from.
 - `kernel-2d/tests/runtime/frames.test.ts` — the frame geometry, held to "every frame reported is a whole frame, and every pixel outside one is counted".
 - `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
 - `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and the runtime/editor boundary as a test rather than a promise (`editor-kernel` D20).

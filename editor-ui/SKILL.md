@@ -120,6 +120,18 @@ Middle-drag and space-drag pan; the wheel zooms toward the cursor; `Home` frames
 
 One shape worth copying: everything the gesture layer needs arrives as callbacks and it holds no camera of its own, so it is a translator from events to intentions and the state stays in one place (U19). What it *does* own is the two pieces of transient interaction state nothing else can know — whether a drag is in progress and whether space is held — which the panel turns into the grab cursor. Clear the space flag on window blur, or alt-tabbing away mid-gesture leaves the editor believing it is still held and the next left-click pans. _[earned 2026-08-12]_
 
+### U21: One gesture layer decides what a press means, and a drag is travel from the press rather than a sum of steps
+
+Placing an entity by dragging it arrived after panning, into a viewport whose left button had been deliberately left unclaimed. The tempting shape is a second pointer layer on the same element for the new button; it is wrong, and the first thing it breaks is space-drag starting on top of a sprite — two listeners racing to interpret one press, with the loser's gesture simply not happening. So the rules stay in one hook, in priority order: space wins, then whatever is under the pointer, then empty space.
+
+Three things that are not obvious until the second gesture exists:
+
+1. **Selection happens on the press, not the release.** Not for feel — because the press is also the only moment the panel can record *where the entity was*, and it needs that for the next point.
+2. **A drag is applied as travel from the press**, never as a running sum of the increments between moves. With snapping on, adding up rounded steps lets a sprite creep away from the pointer over a long drag and never come back. The same shape as any accumulate-versus-recompute choice, and the symptom here is a sprite that no longer sits under the cursor.
+3. **A modifier is read off each move event**, not remembered from the press, so it can be taken or let go mid-gesture. It also needs somewhere to be *said*: a caption that appears only during the drag is the only place a human will ever find out the modifier exists.
+
+The threshold matters too — a press that never travels more than a few pixels is a click and must not nudge what it selected. _[earned 2026-08-12]_
+
 ### U10: A panel always says something, and "nothing to show" is a sentence rather than a blank
 
 Every state gets prose: a folder, a document whose format has no inspector yet, a file the editor does not import, an asset whose settings have not landed, a settings file that will not parse, and nothing selected at all. **Reason:** a blank panel is indistinguishable from a broken one, and in a kernel where most formats do not exist yet, "there is nothing here" is the *common* case rather than the exceptional one. Two things that make the sentences worth reading: name what the thing is (a scene, a sound) rather than what it lacks, and say what would change it ("its own inspector arrives with the scene format"). When settings cannot be parsed, **show the file's text** — being told a file is unreadable without being shown it forces the human out of the editor to find out why. _[earned 2026-08-11]_
@@ -161,6 +173,12 @@ Two ways a viewport gesture fails silently, both fixed in the same effect.
 ### UG7: A bare-letter shortcut fires while the human is typing, because the existing handler never had to care
 
 The editor's only keyboard handler was Ctrl/Cmd-only (U13), so it could take the key wherever the cursor was and that was the point. The moment a viewport wants `F` for "frame the selection", the same reasoning inverts: an `f` typed into an entity's name must be an `f`. **Fix/policy:** every bare-key handler checks the event target first — `INPUT`, `TEXTAREA`, `SELECT` or `isContentEditable` means the key is not yours. `Space` needs cancelling as well as ignoring when it *is* yours, or it scrolls the page and re-presses whichever button last had focus. _[earned 2026-08-12]_
+
+### UG9: A surface that takes presses must take focus, or its keys land in the field the human was last typing in
+
+The viewport cancels the default on `pointerdown` — to stop text-selection drags — and cancelling it also stops the browser moving focus. So after typing in the Inspector, clicking a sprite leaves focus in that text field, and the next press of `F` is an `f` in somebody's entity name. Nothing errors; the level simply gets renamed a letter at a time.
+
+**Fix/policy:** give the surface `tabIndex={-1}` — focusable, never in the tab order — and call `element.focus({ preventScroll: true })` on the press, with `:focus { outline: none }` so it does not sprout a ring. Then UG7's typing guard answers correctly, because the human genuinely has stopped typing. Worth checking on sight in any panel that both cancels `pointerdown` and owns a bare-key shortcut: the two are individually reasonable and wrong together. _[earned 2026-08-12]_
 
 ### UG8: A caption under a canvas changes the size of that canvas, which is a feedback loop as soon as anything is computed from it
 
@@ -208,7 +226,8 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
 - `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
 - `kernel-2d/editor/shell/scene-view-context.tsx` — U18 and U19: the scene renderer, why two is a bounded number rather than a habit, one camera per scene for the life of the window, and the three conditions a scene satisfies before it is framed.
-- `kernel-2d/editor/shell/useSceneGestures.ts` — U20: middle-drag, space-drag, wheel-to-zoom, the two framing keys, and the three ways each of them fails silently.
+- `kernel-2d/editor/shell/useSceneGestures.ts` — U20 and U21: left-press to pick and place, middle-drag, space-drag, wheel-to-zoom, the two framing keys, and the order they take priority in.
+- `kernel-2d/editor/shell/drawn-entities.ts` — every question asked about the picture the renderer drew: what an entity covers, what is on the canvas, and what is under the pointer. One set of rectangles, so a click cannot disagree with an outline.
 - `kernel-2d/editor/shell/open-scene.tsx` — which scene is open and the document behind it; one fetch that both decides a `.json` is a scene and puts it in the store.
 - `kernel-2d/editor/shell/scene-assets.tsx` — U9 for a set whose membership changes: every texture a scene refers to, resolved once per window.
 - `kernel-2d/editor/shell/layout-context.tsx` — the handle on the docking layout, and the only thing that reaches it from outside a panel.
@@ -234,7 +253,8 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 **Not yet written** — until a path appears here, the contract does not exist and must not be assumed:
 
 - Inspector auto-generation from Zod schemas. There are two hand-written inspectors now, which is the point at which generalising has something to generalise *from*.
-- Anything editable in a viewport — gizmos, dragging a sprite, click-to-select in the picture, a marquee, dragging a pivot or a frame grid. The Hierarchy and the Inspector are the only ways to change any of it, deliberately.
+- Gizmos for rotate and scale, a marquee, dragging a pivot or a frame grid, and cycling through overlapping sprites with repeated clicks. Position is the one thing a viewport can change; everything else is the Inspector's, deliberately.
+- A grid, rulers, or a settable snap size. A drag lands on whole level units and Alt frees it; nothing is configurable and nothing is drawn.
 - Dragging inside the Hierarchy tree, and nesting. The list is flat and reordering is two buttons.
 - Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it.
 - A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons, and nowhere else.
