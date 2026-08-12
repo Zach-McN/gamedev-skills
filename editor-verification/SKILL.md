@@ -191,7 +191,8 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/editor/drag-place.spec.ts` — V20: picking and placing asserted in the level's own units, with the zoom-invariance test that catches a camera-blind implementation.
 - `kernel-2d/tests/shell/drawn-entities.test.ts` — what can be clicked, held to being the same rectangle the outline is drawn from.
 - `kernel-2d/tests/editor/new-scene.spec.ts` — V21: making a level, and every way it is refused.
-- `kernel-2d/tests/sidecar/document-endpoint.test.ts` — the create and the replace held to refusing each other's job, refusals first.
+- `kernel-2d/tests/editor/prefabs.spec.ts` — V22: the two assertions a copying implementation cannot pass — the level holding no copy of what it inherits, and the level's bytes unchanged by an edit to the prefab.
+- `kernel-2d/tests/sidecar/document-endpoint.test.ts` — the create and the replace held to refusing each other's job, refusals first, and neither format allowed to be written over the other.
 - `kernel-2d/tests/runtime/frames.test.ts` — the frame geometry, held to "every frame reported is a whole frame, and every pixel outside one is counted".
 - `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
 - `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and the runtime/editor boundary as a test rather than a promise (`editor-kernel` D20).
@@ -212,6 +213,23 @@ Two things learned adding the first feature that puts a file into a project fold
 **The interesting half of "it makes a file" is "it will not make this one."** The happy path is one assertion; the guard that stands between the feature and somebody's finished level is that asking for a name already taken changes nothing — checked against the existing file's bytes *and* its timestamp (V12), because identical contents alone would also pass for a file that had been rewritten with the same text. Same for the folder it declined to create: assert the folder is *not there*, not merely that the file is not. And since creating and replacing are two separate requests (`editor-kernel` D22), each is tested for refusing to do the other's job — that pair is the whole safety argument, and testing one side of it proves half of nothing.
 
 **A screenshot must wait for every panel in it, not just the first one to settle.** The picture of a newly-made level was taken as soon as the scene opened, and caught the Inspector saying the file was not in the project — true of the folder listing it was holding, which arrives a beat later by way of the watcher. The image looked like a bug that did not exist. Wait for the slowest thing in frame; a screenshot that documents a transient is worse than no screenshot, because it is the artefact somebody reaches for when they are already suspicious. _[earned 2026-08-12]_
+
+### V22: When a feature is about a link, assert what the file does *not* contain — and that the file nobody edited is byte-identical
+
+Prefabs are a promise about two files at once: the level holds a reference and no copy, and editing the prefab reaches every instance. Both halves are invisible to the assertions a session naturally reaches for, because a design that copied the picture into each instance at placement time would draw the same picture, list the same rows, and pass every test written from the screen.
+
+Two assertions catch it and nothing else does:
+
+- **Read the level and assert the entity's component map is exactly `['prefab']`.** A positive assertion ("it draws the slime") is satisfied by the broken design too. The absence is the property.
+- **Fingerprint the file the human did not touch, change the prefab, and assert the fingerprint is unchanged** — bytes *and* timestamp (V12). An editor that copied would have had to rewrite the level, so this is the one assertion the wrong design cannot pass.
+
+Generalises past prefabs: whenever a feature's whole value is *not duplicating something*, the test has to be about the thing that should not be there, and about the neighbour that should not have moved. Write both early in the file, where they will not be dropped for being awkward to phrase. _[earned 2026-08-12]_
+
+### V23: A guard that is working makes an unrelated test fail somewhere it is not mentioned
+
+Three prefab tests failed with the service refusing to create the file — correctly, because it never makes a folder on the way (`editor-kernel` D22) and the temp project had no `prefabs/` in it. The failures read as "creating a prefab is broken", and the first instinct was to suspect the new feature.
+
+**Fix/policy:** when a suite tests writing into a folder, put the empty folder in the fixture (`'prefabs/': ''`, per V3) and name in a comment which guard would otherwise fire. The general shape is worth recognising on sight — same family as W7 and W9: a test whose failure message describes the wrong subject. Before changing the code under test, check whether some *other* rule is behaving exactly as designed. _[earned 2026-08-12]_
 
 **The screenshot habit.** A test that asserts nothing and simply writes a full-window screenshot to its output path. It is not a visual-regression baseline — those are brittle across machines — it is a picture to look at when something is reported as looking wrong, which beats reasoning about the source.
 

@@ -170,6 +170,26 @@ It renders what has been typed while that text is in play, and the document's va
 
 **Reason:** a number input fed straight from the document cannot be emptied to type a new value — clearing it parses as nothing, the document keeps the old number, and it reappears under the cursor mid-edit. But the field must still lose to the document when a value arrives from somewhere else, or undo and a text-editor save both appear to do nothing while the field has focus. Committing per keystroke rather than on blur is what keeps "on disk within a second" true during a long edit; the undo step stays single because of the merge key, not because the commit was held back. _[earned 2026-08-11]_
 
+### U23: A panel that shows a *resolved* document reads one thing and writes another, and says which is which
+
+With prefabs, the level on screen is not the level in the file: an instance's picture comes from somewhere else. Every panel that draws or describes a scene now reads the resolved entities, and every panel that changes one still edits the document — the Viewport, the Hierarchy and the Inspector all hold both, and each names them apart (`entity` versus `resolved`).
+
+**Reason:** the resolved copy carries components the file does not, so writing one back bakes them in and severs the link to the prefab, silently. What makes that unreachable rather than merely avoided is a habit that was already universal for another reason: **every recipe re-finds its target by id inside the transaction** (`editor-kernel` D7) and therefore can only ever touch the document. Two practicalities that only show up once you build it. Pass both into a component rather than resolving inside it, so "which one is this?" is answerable at the call site. And **fall back to the file's own entity while resolution is in flight** — the alternative is a row that vanishes for a render, which reads as a bug in the list. _[earned 2026-08-12]_
+
+### U24: A gesture that selects what it just made must be reachable from where it lands
+
+Placing a prefab selects the instance it placed — which moves the Inspector off the prefab, so the button that placed it is gone and "place it fifty times" is fifty round trips through the Assets panel. The fix is not to stop selecting: it is that the thing you land on offers the same gesture. The placed instance's panel carries a **Place another** beside the name of the prefab it came from.
+
+**Reason:** the Inspector holds one thing at a time, and that is the right design — but it means any action that both *creates* and *selects* moves its own control out of reach. This is a shape, not a one-off: duplicate, place, add-from-template and paste will all hit it. The test is worth stating as an acceptance criterion in its own right, because pressing the button once always works and nothing in a single-press test can see the problem: **press it twice without touching anything else.**
+
+Selecting the result is still right — the outline lands on the new thing and one drag moves it — so the answer is a second door, not a removed one. And the two doors must be one implementation: a hook, taking what it operates on as an argument. Two copies of "make an instance" is two chances to write one that copies what it should reference. _[earned 2026-08-12]_
+
+### U25: A control that makes a file names the file; what goes inside it is the button
+
+Making a level and making a prefab share one name field, one folder rule and one path preview, and differ only in which button is pressed. Nothing about the name or the folder says which kind it is.
+
+**Reason:** the *path* is the same question either way, and asking it twice in two rows would imply the answers differ — that prefabs go somewhere levels do not. They do not: `prefabs/` is a convention in the folder map and the editor is not allowed to rely on it (U11's rule, one level up from a filename to a folder name). Keeping the choice in the button also keeps the promise honest, since the path preview stays true whichever is pressed. The name typed becomes the name *inside* the document as well, which is the only sensible default and is editable the moment it opens. _[earned 2026-08-12]_
+
 ## Gotchas
 
 ### UG6: React's `onWheel` cannot `preventDefault`, and a middle-button `mousedown` must
@@ -247,6 +267,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/asset-kinds.ts` — what a file is (U11) and how to find it in the tree. Shared the moment a second panel needed the same answer.
 - `kernel-2d/editor/shell/asset-rows.ts` — which rows a folder has, and why a sidecar folds into the row of the file it annotates (`editor-kernel` D4). Shared because the Inspector counts a folder the same way the panel lists it.
 - `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, which scene is open, and nothing else.
+- `kernel-2d/editor/shell/scene-prefabs.tsx` — U23's source: the resolved level every panel draws and describes, and the loud note saying it is never the thing that gets written.
+- `kernel-2d/editor/shell/usePlacePrefab.ts` — U24 as built: one gesture, reachable from the prefab and from what it just placed.
+- `kernel-2d/editor/panels/TexturePicker.tsx` — one picker, two owners, and the D5 round trip that fetches a texture's id. Lifted out the moment a prefab needed the same control as an entity.
 - `kernel-2d/editor/shell/project-context.tsx` — U9. One folder read and one change stream per window.
 - `kernel-2d/editor/shell/useAssetMeta.ts` — one file's import settings, re-asked when the folder changes as well as when the selection does.
 - `kernel-2d/editor/shell/useProjectTree.ts` — the folder, kept current: the re-read of U5, the settle of U6, and the stale state of U7.

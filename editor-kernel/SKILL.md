@@ -128,6 +128,36 @@ Two guards belong to the create specifically. **It never makes a folder** — a 
 
 **Keyed on the document's own `format` string, never on the path.** Where a file sits in the folder tree is a convention (`scenes/` is in the folder map, not in the code); what a document says it is, is a fact — the same ordering as `editor-ui` U11, and the first real payoff of the format literal every document has carried since T1. A consequence worth wanting: "this is not a format I know" and "this is a format I know and the file is malformed" are then *different* answers with different sentences, where a single discriminated union over all known formats would have collapsed them into one unhelpful "invalid". _[earned 2026-08-11]_
 
+**Tested by a second format arriving, and it held: prefabs cost one line in the registry and widened nothing.** Same create, same replace, same refusals, same four lines. Worth recording as a *result* rather than as an intention, because "it will generalise" is a claim every design makes and few keep.
+
+One guard only becomes load-bearing at the second format, and it was already there: **a document is only ever replaced by one of the format already at that path.** With one format that reads as pedantry. With two it is the line between "rename this prefab" and "a valid prefab written over somebody's level" — a document that is valid, at a path inside the project, passing every check that is about the thing being *written*. Assert it in both directions the day a second format lands; the direction nobody thought of is the one that breaks. _[earned 2026-08-12]_
+
+### D24: A document is its own annotation, so it carries its own id — no sidecar
+
+A prefab holds `id` as a field of the document. A texture's id lives in the `.meta` beside it. Both are D5 references from the outside and neither reader can tell the difference, which is the point.
+
+**Reason:** the `.meta` exists for one reason — nothing can be written inside a PNG. Reaching for one anyway when the file *is* JSON would buy nothing and cost the whole of D4's orphan machinery: a second file to keep beside the first, a stranded-sidecar rule, a startup sweep, and a `.meta` for a `.meta`'s worth of confusion. Ask "could this file hold the annotation itself?" before adding a sidecar for anything.
+
+Three consequences that are easy to get wrong in the other direction:
+
+1. **Nothing gives a document a `.meta`.** The extension vocabulary that decides which files get one (D21) already excludes `.json`, so this falls out — but it is the reason the Inspector describes a `.json` by what is *inside* it rather than by what is missing beside it.
+2. **Setting a reference to a document is synchronous**, where setting one to a texture is not (D5's cost note). The id is in the document the editor has already read, so there is no round trip. Do not copy the asynchronous shape over out of symmetry.
+3. **The witness half still applies.** The id recorded in a level is compared with the id the prefab carries, disagreement is said out loud, and the instance is drawn anyway. Same three rules, different place to read the id from. _[earned 2026-08-12]_
+
+### D25: A reference between documents is resolved by the format, once, and the resolved copy is never what gets written
+
+An entity that is an instance of a prefab carries a reference and nothing else. `resolveEntity(entity, prefab)` — in `runtime/formats/scene-schema.ts`, not in the editor — merges the prefab's components under the entity's own, leaves the transform untouched, and hands back a copy.
+
+**Three decisions, each of which had an obvious wrong answer.**
+
+**Resolution lives in the format, not in the panel that first needed it.** The runtime's scene loader will do this same sum when play mode arrives, and two derivations of *what a level contains* is the editor and the shipped game disagreeing about the game — D2's failure with a longer fuse. Same instinct as D20: the shipping layer owns anything the shipping layer reads.
+
+**"Editing the prefab updates every instance" is not a feature; it is what you get for free if the resolver reads the document store.** The prefab the Inspector edits and the prefab an instance draws are then one object, so a change lands in the picture with nothing told to refresh, nothing invalidated, and no cache. Reading the *served* answer instead would work exactly once, at open, and then quietly stop — and it would look correct in every test that only opens a level.
+
+**The resolved copy is for drawing and describing, and writing one back would silently sever the link.** It carries the prefab's components; saved, they become the level's own, and every instance stops following the prefab with nothing on screen saying so. What keeps this true is not care, it is that every writer in the kernel re-finds its entity by id *inside* the transaction (D7) and therefore only ever touches the document. Say so where the resolved value is produced, and assert it by reading the file for what it does **not** contain (`editor-verification` V22).
+
+A fourth, smaller: **what the entity carries itself wins, per component type.** The editor offers no way to write an override, but a hand-edited file has to mean something, and "the one written here beats the one it inherits" is both the least surprising reading and the shape overrides will need — so nothing has to change format to get them later. _[earned 2026-08-12]_
+
 ### D5: References carry both a stable ID and a human-readable path
 
 `"sprite": {"id": "a3f9", "path": "assets/textures/knight.png"}`. IDs are generated once and stored; a fixup tool reconciles the pair when files move. **Reason:** the two properties are irreconcilable in a single field. IDs survive renames but make files unreadable; paths stay greppable and let a session understand a scene by reading it, but break on every move. Carrying both costs a few bytes and removes the tradeoff. _[seeded 2026-08-11, report §4]_
@@ -318,7 +348,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`, `GET /document?path=…`, `GET /asset?path=…`, and the two PUTs to `/meta` and `/document` — the only non-GETs this service answers at all.
 - `kernel-2d/sidecar/document-view-schema.ts` — the registry of document formats the editor reads and writes, keyed by the `format` the document itself carries (D22), and the answer `GET /document` gives about one.
 - `kernel-2d/sidecar/document-files.ts` — D22 in one file: the create and the replace kept apart, and every guard that keeps each of them from doing the other's job.
-- `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema`: the flat entity list, the transform, the open component map and the registry of components the kernel knows. Owned by `text-formats`.
+- `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema` *and* `PrefabSchema`: the flat entity list, the transform, the open component map, the registry of components the kernel knows, and the resolution of D25. Owned by `text-formats`; why two formats share one file is T14.
+- `kernel-2d/editor/shell/scene-prefabs.tsx` — D25 as built: which prefabs a level points at, read into the store, merged by the format's own function, and the three things that can be wrong with a reference.
+- `kernel-2d/editor/shell/usePlacePrefab.ts` — one gesture, two places to reach it from, and why the prefab comes from the store rather than from what the level already references.
 - `kernel-2d/runtime/scene/scene-view.ts` — the second renderer, and its report of which entities it drew, where, through which camera, and how much level there turned out to be.
 - `kernel-2d/runtime/scene/entity-layer.ts` — documents into drawn objects: matched by id, updated in place, depth from list order.
 - `kernel-2d/runtime/scene/coordinates.ts` — scene space (y-up, bottom-left), the camera (D23), and how the two become screen space. One definition, no Phaser.

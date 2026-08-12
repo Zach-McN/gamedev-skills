@@ -79,6 +79,16 @@ The service's document registry is `{ [format]: schema }` and the union type is 
 
 **Reason:** the tempting alternative is a map for lookup plus a hand-written union type, which are the same list written twice and drift the first time somebody adds to one. The reason it cannot simply *be* a discriminated union is worth knowing: a union answers "did this parse", and the editor needs "is this a format I know" and "is this document malformed" to be different answers with different sentences (`editor-kernel` D22). Keying the map on the `format` literal every document already carries is what makes both available from one structure. _[earned 2026-08-11, Zod 4.4.3]_
 
+### T14: Two formats share one file when one needs the other's vocabulary — because a file the service compiles may have no relative imports
+
+The prefab format lives in `runtime/formats/scene-schema.ts`, beside the scene, rather than in a `prefab-schema.ts` of its own. Not tidiness — a constraint with only one way out.
+
+The chain: a prefab holds a component map, so it must validate against the component registry; the registry lives in the scene's file because that file is compiled by *both* TypeScript projects and therefore cannot have a relative import of its own (`editor-ui` U4); so a separate prefab file could not reach the registry, and moving the registry out would break the scene the same way. Two formats, one file, and a paragraph at the top saying why.
+
+**What to hold on to.** The two are still separate documents with separate schemas that happen to share a file: nothing about a scene depends on a prefab, and the arrow only runs one way — an entity may *point at* a prefab. Sharing a file is not sharing a format, and the day one of them needs its own version bump nothing here stops it.
+
+**Ask the question when the first format is created, not when the second arrives.** A shared-vocabulary module that the Node side compiles is a file that can never grow a relative import, so everything that needs its vocabulary must live in it. That is a real design constraint on how much a format file is allowed to own, and it is invisible until the second format shows up and the compiler refuses. A rename to `formats.ts` would make the file honest; it is churn across a dozen importers and belongs in a gardening pass, not in the session that discovered it. _[earned 2026-08-12, TypeScript 5.9.3]_
+
 ## Gotchas
 
 ### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
@@ -97,7 +107,7 @@ Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify
 - `kernel-2d/tests/sidecar/tree-schema.test.ts` — the round-trip test every subsequent format copies.
 - `kernel-2d/runtime/formats/meta-schema.ts` — the `.meta` format, and the worked example of T5–T7, T9 and T10: the discriminated union on `type`, the defaults factory every writer shares, the extension→type vocabulary, and why it sits in the layer that ships.
 - `kernel-2d/sidecar/meta-view-schema.ts` — T8: the answer *about* a `.meta`, as distinct from the `.meta` itself.
-- `kernel-2d/runtime/formats/scene-schema.ts` — the scene format, and the worked example of T12: the flat ordered entity list, the transform as a field rather than a component, the open component map and the registry beside it.
+- `kernel-2d/runtime/formats/scene-schema.ts` — the scene format *and* the prefab format, and the worked example of T12 and T14: the flat ordered entity list, the transform as a field rather than a component, the open component map, the registry beside it, and the reference between the two documents.
 - `kernel-2d/sidecar/document-view-schema.ts` — T13: the one list of document formats, and the answer *about* a document.
 - `kernel-2d/tests/runtime/scene-schema.test.ts` — the round trip, and the unknown component that survives it.
 - `kernel-2d/tests/sidecar/document-endpoint.test.ts` — F1 sharpened, through the real service: a key added by hand surviving a write, at the top level and nested.
