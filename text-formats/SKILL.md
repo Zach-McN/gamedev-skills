@@ -53,7 +53,7 @@ The rule generalises. **A format the editor reads and later rewrites is loose. A
 
 ### T10: A schema lives with the layer that ships, not with the process that writes it
 
-The `.meta` schema was written by the filesystem service and lived beside it, and moved to `runtime/formats/` the first time the game runtime had to read import settings. **Reason and the rule to apply going forward:** ask "which layers read this?" when the format is created, and put it in the one that ships — a development-only process importing a shipping module is fine, the reverse is not (`editor-kernel` D1/D20). A schema compiled by more than one TypeScript project must also have **no relative imports of its own**, because one project wants `.js` extensions on them and the other must not have them (`editor-ui` U4); depending only on `zod` is what keeps that true. Both are a one-line decision at creation and a cross-cutting move afterwards. _[earned 2026-08-11]_
+The `.meta` schema was written by the filesystem service and lived beside it, and moved to `runtime/formats/` the first time the game runtime had to read import settings. **Reason and the rule to apply going forward:** ask "which layers read this?" when the format is created, and put it in the one that ships — a development-only process importing a shipping module is fine, the reverse is not (`editor-kernel` D1/D20). A schema compiled by more than one TypeScript project may have relative imports, and they must be written **`./x.js`** — the extensionless spelling only satisfies the browser project (`editor-kernel` D20, corrected 2026-08-12). Both are a one-line decision at creation and a cross-cutting move afterwards. _[earned 2026-08-11]_
 
 ### T11: A format that describes a file carries when it changed, not only how big it is
 
@@ -69,7 +69,7 @@ Three details that are easy to get wrong, in the order they bite:
 
 1. **Known components are checked, never replaced.** Running each value back through its own schema and storing the result would strip any key the component schema does not model — which is precisely what T9's loose objects exist to prevent, reintroduced one level down. A `superRefine` that validates and discards its result is the right shape, however odd it looks.
 2. **An unknown type is not an error and a known-but-malformed one is.** These are different sentences and different situations: the first is most likely a newer editor or a genre layer, the second is a bug in something. Collapsing them into "invalid" makes the editor wrong about the common case.
-3. **The registry lives in the schema file itself**, not beside it, when that file is compiled by more than one TypeScript project. `runtime/formats/scene-schema.ts` may have no relative imports (T10), and the entity schema needs the registry, so a registry in its own module would either break the Node build or force a circular import.
+3. **The registry lives in the schema file itself**, with the entity that carries a component map, because the entity schema validates against it and a registry in its own module would force a circular import. (An earlier version of this said the file *may have no relative imports*; that turned out to be false — see T14 — but the conclusion holds for the circularity reason alone.)
 
 _[earned 2026-08-11, Zod 4.4.3]_
 
@@ -79,15 +79,15 @@ The service's document registry is `{ [format]: schema }` and the union type is 
 
 **Reason:** the tempting alternative is a map for lookup plus a hand-written union type, which are the same list written twice and drift the first time somebody adds to one. The reason it cannot simply *be* a discriminated union is worth knowing: a union answers "did this parse", and the editor needs "is this a format I know" and "is this document malformed" to be different answers with different sentences (`editor-kernel` D22). Keying the map on the `format` literal every document already carries is what makes both available from one structure. _[earned 2026-08-11, Zod 4.4.3]_
 
-### T14: Two formats share one file when one needs the other's vocabulary — because a file the service compiles may have no relative imports
+### T14: One format may import another's vocabulary — and the constraint that said otherwise was never measured
 
-The prefab format lives in `runtime/formats/scene-schema.ts`, beside the scene, rather than in a `prefab-schema.ts` of its own. Not tidiness — a constraint with only one way out.
+The prefab format spent one session inside `scene-schema.ts` because a prefab holds a component map, the map is validated against the registry, the registry lives in the scene's file, and a shared-compiled module was recorded as unable to have relative imports of its own. Every link in that chain was true except the last one, which had been carried forward from an older entry and never tested.
 
-The chain: a prefab holds a component map, so it must validate against the component registry; the registry lives in the scene's file because that file is compiled by *both* TypeScript projects and therefore cannot have a relative import of its own (`editor-ui` U4); so a separate prefab file could not reach the registry, and moving the registry out would break the scene the same way. Two formats, one file, and a paragraph at the top saying why.
+**It is false.** `./scene-schema.js` — the `.js` spelling — resolves under bundler resolution, under NodeNext, and in Vite at runtime. One line, five minutes to check, and the prefab now has its own file.
 
-**What to hold on to.** The two are still separate documents with separate schemas that happen to share a file: nothing about a scene depends on a prefab, and the arrow only runs one way — an entity may *point at* a prefab. Sharing a file is not sharing a format, and the day one of them needs its own version bump nothing here stops it.
+**The rule that replaces it.** Two formats live in one file only when one *cannot* be expressed without the other's runtime values, and even then check that a one-way import would not do. What makes `prefab-schema.ts` → `scene-schema.ts` work is that the arrow runs one way: the prefab imports the registry, the scene never imports the prefab, and the one thing pointing back — an entity's `prefab` component — sits with the registry where components belong. A `Prefab` referenced from the scene's side would have to be a **type-only** import, which is erased and therefore not a runtime cycle; a value import both ways is the thing to refuse.
 
-**Ask the question when the first format is created, not when the second arrives.** A shared-vocabulary module that the Node side compiles is a file that can never grow a relative import, so everything that needs its vocabulary must live in it. That is a real design constraint on how much a format file is allowed to own, and it is invisible until the second format shows up and the compiler refuses. A rename to `formats.ts` would make the file honest; it is churn across a dozen importers and belongs in a gardening pass, not in the session that discovered it. _[earned 2026-08-12, TypeScript 5.9.3]_
+**The lesson that outlives the detail.** A constraint recorded without a measurement will shape designs for as long as nobody re-checks it, and it never announces itself — the code it produced compiles and passes. Anything in these skills phrased as "X is impossible" and not marked as measured is a candidate for a gardening pass to re-test. Cheap to check, and the cost of believing it is a file that quietly grows past what it should own. _[earned 2026-08-12, TypeScript 5.9.3, Vite 8]_
 
 ## Gotchas
 

@@ -37,7 +37,7 @@ The `.meta` format was written for the sidecar and lived there. The moment the r
 
 Two things learned doing it, both worth having in advance:
 
-- **A module compiled by both TypeScript projects must have no relative imports of its own.** The Node project wants `.js` extensions on them and the browser project must not have them (`editor-ui` U4), so one file cannot satisfy both. This one imports only `zod` and is therefore safe in both; a session adding a relative import to it would break the sidecar's typecheck with an error pointing at a file nobody touched. Say so in the file.
+- **A module compiled by both TypeScript projects may have relative imports, and they are written `./x.js`.** ~~It must have none of its own.~~ That was recorded as a constraint and it is false — measured 2026-08-12 by trying it. TypeScript maps `./x.js` → `x.ts` under bundler resolution as well as NodeNext, and Vite does the same at runtime, so one spelling satisfies both projects. The *extensionless* spelling is the one that only works on one side, so a shared module must not use it. See `text-formats` T14 for what believing the stronger version cost.
 - **The boundary is worth a test, because the failure is silent.** `kernel-2d/tests/architecture/boundaries.test.ts` reads every file under `runtime/` and fails if any of them imports from `editor/`, `sidecar/`, `scripts/` or `tests/`, and separately holds the runtime's external dependencies to a named list. An import in the wrong direction compiles, passes every behaviour test, runs perfectly in the editor, and surfaces as a shipped game carrying a React panel. There is no moment at which it announces itself.
 
 _[earned 2026-08-11]_
@@ -273,6 +273,20 @@ Nothing fails at write time. The damage shows up as undo skipping a step or rest
 
 Duplication, dead code, and creeping complexity are not caught by behavior tests — the editor keeps working while future sessions get slower. **Fix/policy:** a scheduled gardening session every few features (audit the codebase against the skills' conventions, second-model review, refactors behind the same green gate). The smoke alarm is quantitative: if session cost or time for similar-sized features trends upward, the garden needs tending. _[seeded 2026-08-11, report §13]_
 
+**Run for the first time after four features, and the shape that made it safe is worth keeping.**
+
+**The gate is "no test assertion changes."** Every refactor lands behind the full suite, and afterwards `git diff --stat -- tests/` is read as its own check: anything but a mechanical rename means behaviour moved, and the session stops rather than adjusting the test. That single rule is what separates gardening from rewriting, and it is checkable rather than aspirational.
+
+**What a survey actually turns up, in rough order of value.** Worth using as the checklist, because none of it is visible from the outside:
+
+1. **A constraint recorded without a measurement.** The most valuable find by a distance: a rule that had shaped two design decisions turned out to be false when tested (`text-formats` T14). Anything in these skills phrased as "X is impossible" and not marked as measured is a gardening candidate — cheap to check, and the cost of believing it compounds.
+2. **Small presentational components duplicated per panel.** Four copies of `Section`/`Field`/`Note`/`Row` had accumulated, one per inspector body, because each was added by the session that needed it and no test can see the duplication. Check on sight whenever a third panel of a kind exists.
+3. **Two hooks that are the same mechanism with different vocabulary.** Following a texture reference and following a prefab reference were ninety identical lines. The tell is a second file whose *comments* echo the first one's.
+4. **Numeric claims in prose.** "Every one of the four actions", "the only code that…", "a one-line branch" — all true when written and all silently false a feature later. Grep for them; in a codebase whose owner never reads it, a stale comment is worse than none.
+5. **A file whose name stopped describing it**, and test hooks named after half of what a control does.
+
+**What to leave alone.** Long files that are well-sectioned. Splitting `ViewportPanel.tsx` for line count would scatter something that currently reads top to bottom, and length is not the smell — a file doing several unrelated things is. _[earned 2026-08-12]_
+
 ### G4: "Just generate this one level" breaks the guarantee retroactively
 
 The pressure appears when a tool doesn't exist yet and the content is needed now. **Fix/policy:** the rule is absolute (D14) — the answer to missing tooling is the tool, not the content. Note the failure is retroactive: once prompt-authored data is in the project, no later tool work restores the provenance of what shipped. _[seeded 2026-08-11, report §3]_
@@ -345,10 +359,11 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/tests/architecture/boundaries.test.ts` — D1 as a test rather than as a promise.
 - `kernel-2d/sidecar/meta-view-schema.ts` — what `GET /meta` answers with, including the two answers that are not a meta: there isn't one, and there is one this editor cannot read.
 - `kernel-2d/sidecar/meta-files.ts` — the whole of D17 in one file: create-when-missing, the startup sweep, the one write the editor can ask for, and the path validation everything from the browser passes through.
-- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`, `GET /document?path=…`, `GET /asset?path=…`, and the two PUTs to `/meta` and `/document` — the only non-GETs this service answers at all.
+- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`, `GET /document?path=…`, `GET /asset?path=…`, the two PUTs to `/meta` and `/document`, and `POST /document` — the only non-GETs this service answers at all.
 - `kernel-2d/sidecar/document-view-schema.ts` — the registry of document formats the editor reads and writes, keyed by the `format` the document itself carries (D22), and the answer `GET /document` gives about one.
 - `kernel-2d/sidecar/document-files.ts` — D22 in one file: the create and the replace kept apart, and every guard that keeps each of them from doing the other's job.
-- `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema` *and* `PrefabSchema`: the flat entity list, the transform, the open component map, the registry of components the kernel knows, and the resolution of D25. Owned by `text-formats`; why two formats share one file is T14.
+- `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema`: the flat entity list, the transform, the open component map, and the registry of components the kernel knows. Owned by `text-formats`.
+- `kernel-2d/runtime/formats/prefab-schema.ts` — `PrefabSchema` and the resolution of D25. Imports the scene's registry and is never imported back, which is the whole of why these are two files (T14).
 - `kernel-2d/editor/shell/scene-prefabs.tsx` — D25 as built: which prefabs a level points at, read into the store, merged by the format's own function, and the three things that can be wrong with a reference.
 - `kernel-2d/editor/shell/usePlacePrefab.ts` — one gesture, two places to reach it from, and why the prefab comes from the store rather than from what the level already references.
 - `kernel-2d/runtime/scene/scene-view.ts` — the second renderer, and its report of which entities it drew, where, through which camera, and how much level there turned out to be.
