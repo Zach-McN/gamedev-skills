@@ -39,6 +39,22 @@ Change events arrive in bursts — copying a folder in fires one per file — so
 
 When the change stream drops, the Assets panel keeps the tree on screen and says it may be out of date, rather than blanking or silently pretending it is current. **Reason:** stale-but-labelled is more useful than empty, and both are far better than stale-and-confident. Same reasoning as U3, and the two states are distinct: `unavailable` means never got a folder at all, `ready` with the feed down means this was true a moment ago. _[earned 2026-08-11]_
 
+### U8: Selection is UI state, lives outside the document, and is never undoable
+
+What is selected is held in a plain React context above the docking layout, not in the document store. **Reason:** pressing undo after clicking a different file must reverse the last thing that was *changed*, not the last thing that was *looked at* — and the way to guarantee that is for selection never to be in the thing undo replays. It is also never serialized and never appears in a saved file, which is the other half of the same observation. A context rather than a store because a single path needs nothing more; when the store arrives for real document state, selection stays out of it. _[earned 2026-08-11]_
+
+### U9: Anything with a live subscription is read once per window and shared, not per panel
+
+The Assets panel and the Inspector both need the project folder. The hook that fetches it and holds a change stream open is called once, in a provider above the layout, and both panels read from that. **Reason:** two callers means two streams, two fetches, and — the part that actually bites — two copies refreshed on separate timers, so one panel can be a beat behind its neighbour with nothing on screen saying so. Same reasoning as U5 one level up: the failure is not the wasted work, it is the two answers. **Providers go above the docking layout**, because dockview mounts and unmounts panel bodies as tabs move, and state held inside a panel is lost the first time the human drags it. _[earned 2026-08-11]_
+
+### U10: An inspector always says something, and "nothing to tune" is a sentence rather than a blank
+
+Every state gets prose: a folder, a document whose format has no inspector yet, a file the editor does not import, an asset whose settings have not landed, a settings file that will not parse, and nothing selected at all. **Reason:** a blank panel is indistinguishable from a broken one, and in a kernel where most formats do not exist yet, "there is nothing here" is the *common* case rather than the exceptional one. Two things that make the sentences worth reading: name what the thing is (a scene, a sound) rather than what it lacks, and say what would change it ("its own inspector arrives with the scene format"). When settings cannot be parsed, **show the file's text** — being told a file is unreadable without being shown it forces the human out of the editor to find out why. _[earned 2026-08-11]_
+
+### U11: What a file says it is beats what its name suggests
+
+The inspector shows the type from the `.meta` when there is one and falls back to the extension only when there is not. **Reason:** the sidecar is authored and the extension is a guess, so preferring the guess would make a deliberate override invisible. The same ordering applies anywhere else a document and a filename both claim to describe the same thing. _[earned 2026-08-11]_
+
 ## Gotchas
 
 ### UG1: Dockview's layout is computed inside `requestAnimationFrame`, so a non-compositing surface freezes it at 100×100
@@ -63,8 +79,13 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank.
 - `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, and the worked example of a panel with a body.
+- `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10 and U11: every state it can be in has a sentence.
+- `kernel-2d/editor/shell/asset-rows.ts` — which rows a folder has, and why a sidecar folds into the row of the file it annotates (`editor-kernel` D4). Shared because the Inspector counts a folder the same way the panel lists it.
+- `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, and nothing else.
+- `kernel-2d/editor/shell/project-context.tsx` — U9. One folder read and one change stream per window.
+- `kernel-2d/editor/shell/useAssetMeta.ts` — one file's import settings, re-asked when the folder changes as well as when the selection does.
 - `kernel-2d/editor/shell/useProjectTree.ts` — the folder, kept current: the re-read of U5, the settle of U6, and the stale state of U7.
-- `kernel-2d/editor/shell/App.tsx` — the shell: status strip above, docking layout below.
+- `kernel-2d/editor/shell/App.tsx` — the shell: status strip above, docking layout below, providers around both.
 - `kernel-2d/editor/shell/useSidecarStatus.ts` — how the editor learns which project it is connected to, and what it does when the answer stops coming (U3).
 - `kernel-2d/editor/shell/StatusStrip.tsx` — the connection line, including the `data-testid` hooks the browser suite reads.
 - `kernel-2d/editor/shell/shell.css` — the frame around the docking layout. Dockview's own chrome comes from its theme, not from here.
@@ -74,7 +95,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 **Not yet written** — until a path appears here, the contract does not exist and must not be assumed:
 
-- The Zustand/immer store and the transaction API it fronts. No document state exists yet, so neither dependency has been added.
-- Inspector auto-generation from Zod schemas.
+- The Zustand/immer store and the transaction API it fronts. No document state exists yet, so neither dependency has been added. Selection is not it and never becomes it (U8).
+- Inspector auto-generation from Zod schemas. The Inspector's fields are hand-written and read-only; every editable control is still to come.
 - The panel menu and saved layouts (UG4).
 - Any keyboard shortcut registry.

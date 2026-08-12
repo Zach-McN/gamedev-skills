@@ -35,6 +35,22 @@ The binary lands wherever the human put it from Photoshop or Blender. A JSON sid
 
 **Confirmed in build: the mirror includes the sidecars.** The asset browser lists `.meta` files as the ordinary files they are. It is tempting to hide them for tidiness, and it is wrong: a browser that silently omits part of the folder is no longer a mirror, and the human then has files on disk the editor has taught them not to expect. Folding a sidecar into the row of the asset it annotates is a presentation job for the feature that gives those files meaning — not a reason to drop them from the tree. The ignore list stays what it was: tooling junk only, never anything a human might have authored. _[earned 2026-08-11]_
 
+**Amended, once that feature existed: sidecars fold into the row of the file they annotate.** `knight.png` is one row carrying a marker rather than two rows; selecting it shows the settings in the inspector. This is the presentation job the note above anticipated, not the hiding it forbids — every file on disk is still represented, and the folder counts the inspector shows are computed from the same rule that lists the rows, so the number and the tree can never be two different answers. **A `.meta` with no file beside it keeps its own row, marked**, which is the same rule rather than an exception to it: with nothing to attach to, the only honest place to show it is on its own, and a stranded sidecar is exactly the thing a human needs to be able to find. Put the folding rule in one shared module the moment a second panel needs it; two copies disagree the first time either changes. _[earned 2026-08-11]_
+
+### D17: The sidecar creates a `.meta` that is missing and deletes a stranded one at startup — nothing else, ever
+
+Stated in full, because this is the first and so far only write the service makes into a human's project folder:
+
+- **Creates** a `.meta` when a file with a recognised asset extension has none — at startup, when a file is added, and when a sidecar is deleted while its file is still there.
+- **Deletes** a `.meta` at startup, and only at startup, when no file sits beside it.
+- **Never modifies** one that exists, including one it cannot parse.
+
+**Reason:** the write privilege has to be small enough to state in three lines, because every widening of it is a way for the editor to damage work it did not author, and the damage is discovered later by a human who has no reason to suspect the tool. Three specifics that carry their own reasons:
+
+1. **Create-when-missing uses an exclusive-create flag, not an existence check followed by a write.** The check-then-write version has a window; two sidecars opened on the same folder, or a startup sweep racing a live event, land in it. `EEXIST` is not an error here, it is the answer.
+2. **A file it cannot parse is left alone.** A broken `.meta` is far more likely to be one a human is midway through editing than one worth replacing, and "the editor overwrote my file because it did not like it" is unrecoverable.
+3. **Deleting strays happens at startup only.** No OS reports a rename as a rename (G7), so a stranded sidecar during a session is as likely to be the removal half of a rename as it is to be rubbish — deleting there would throw away the stable id and settings of every file the human renames, mid-gesture. Doing it once at startup keeps that window shut. The cost, which was accepted knowingly rather than discovered: a rename *does* lose its id and settings at the next start, and that is the material a "fixup when files move" tool would otherwise have used. **Every removal is named in the startup banner**, because this is the one moment the service deletes anything and silence there would make the loss invisible. _[earned 2026-08-11]_
+
 ### D5: References carry both a stable ID and a human-readable path
 
 `"sprite": {"id": "a3f9", "path": "assets/textures/knight.png"}`. IDs are generated once and stored; a fixup tool reconciles the pair when files move. **Reason:** the two properties are irreconcilable in a single field. IDs survive renames but make files unreadable; paths stay greppable and let a session understand a scene by reading it, but break on every move. Carrying both costs a few bytes and removes the tradeoff. _[seeded 2026-08-11, report §4]_
@@ -129,6 +145,10 @@ Chokidar's `awaitWriteFinish` is what stops a half-written PNG being announced w
 
 A rename arrives as an unlink of the old name plus an add of the new one. Any code that tries to present renames as a single event is inventing a correlation the OS did not give it. **Fix/policy:** report the two events honestly and say so in the UI/banner text, so the human is not confused by seeing their one action produce two lines. Chokidar's `atomic` option coalesces unlink+add **at the same path** (editors that save via temp-file swap) — it does not and cannot pair up a real rename. _[earned 2026-08-11, chokidar 5.0.0]_
 
+### G9: A service that writes into the folder it watches will see its own writes, and that is a loop unless something breaks it
+
+Creating a `.meta` in response to a file appearing produces a change event for the `.meta`, which is another file appearing. **Fix/policy:** the loop is broken by the *rule*, not by a flag — a `.meta` is not an asset, so the second pass through does nothing, and the sidecar never gives a `.meta` a `.meta`. Two things make this reliable rather than lucky. Write the termination argument into the code as a comment where the handler is, because a later session widening "what counts as an asset" needs to see what it would break. And **run the bulk sweep before the watcher starts**, not after: a few hundred sidecars created with the watcher already listening is a few hundred change events describing the service's own work, which the editor then treats as the human having done something. A test asserts the folder listing is unchanged after the dust settles, which is the only form of "it does not loop" that is actually checkable. _[earned 2026-08-11]_
+
 ### G8: Path separators leak the authoring machine into the data
 
 Windows produces `assets\textures\knight.png`, macOS produces `assets/textures/knight.png`, and the same project then serializes two different ways depending on who saved last. **Fix/policy:** one conversion helper at the boundary, forward slashes in every path that reaches JSON, a terminal, or a test, and an explicit assertion in the test suite that no emitted path contains a backslash. This has to be settled in the first format, because every later format inherits the convention. _[earned 2026-08-11]_
@@ -150,7 +170,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/status-schema.ts` — the status format served by `GET /`: which project is open and what else this sidecar serves. The first format read by both halves of the system.
 - `kernel-2d/sidecar/event-schema.ts` — the change format carried by `GET /events`, and the home of the change vocabulary (D16).
 - `kernel-2d/sidecar/feed.ts` — the hand-off from the watcher to everything listening: the terminal, and every open editor window.
-- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`.
+- `kernel-2d/sidecar/meta-schema.ts` — `MetaSchema`: the `.meta` sidecar format, the extension→type vocabulary, and the defaults factory both writers build from. Owned by `text-formats`.
+- `kernel-2d/sidecar/meta-view-schema.ts` — what `GET /meta` answers with, including the two answers that are not a meta: there isn't one, and there is one this editor cannot read.
+- `kernel-2d/sidecar/meta-files.ts` — the whole of D17 in one file: create-when-missing, the startup sweep, and the path validation everything from the browser passes through.
+- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`.
 - `kernel-2d/sidecar/start.ts` — bringing the sidecar up as a library rather than as a command, which is what lets the editor launcher host it in-process (D9).
 - `kernel-2d/sidecar/ignore.ts` — what the sidecar never lists and never watches.
 - `kernel-2d/scripts/editor.ts` — the one command (D9).
@@ -160,6 +183,5 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 - `SceneSchema` — entity list, component maps, transforms, asset refs.
 - `PrefabSchema` — reusable entity templates.
-- `MetaSchema` — the `.meta` sidecar format.
 - The transaction API surface — the single entry point for all document mutation (D7).
-- The sidecar's write API (JSON read/write, static asset serving) and its WebSocket change feed — the read side exists (above); these do not.
+- The sidecar's write API for documents the *editor* changes (JSON read/write, static asset serving). The only write that exists is D17's, which the editor cannot trigger and which touches nothing but a missing or stranded `.meta`.

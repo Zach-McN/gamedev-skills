@@ -55,7 +55,23 @@ The throwaway project the browser tests open is the actual sample project, writt
 
 "I save a PNG and it appears" is asserted by writing the file straight into the watched folder from the test process, then asserting the row is on screen within the second. **Reason:** V2 carried into the browser — the whole chain under test is watcher, feed, stream, proxy and panel, and any stub replaces the part most likely to be wrong. The test cleans up by deleting the file, which doubles as the deletion assertion. _[earned 2026-08-11]_
 
+### V12: "It never touched my file" is proved with the bytes *and* the timestamp
+
+A test that asserts a file was left alone reads its contents and its `mtime` before and after, and asserts both are unchanged. **Reason:** contents alone pass for a file that was rewritten with identical bytes, which is not the same promise — a service that rewrites a file every startup churns the folder, breaks any external watcher, and would happily rewrite one whose contents it had *also* changed the day the writer gained a field. The timestamp is what makes "did not write" distinguishable from "wrote the same thing". _[earned 2026-08-11]_
+
+### V13: A destructive behaviour is tested from both sides, in the same file
+
+Deleting stranded sidecars at startup is asserted twice: that a start clears one, and that a running session does *not*. **Reason:** a rule of the form "only ever at X" is two claims, and the second one is the one a later session breaks by accident while making the first one more helpful. Written next to each other, the pair reads as the rule; written apart, the negative half looks like an oddity somebody can delete. Same shape as V6's anchoring, applied to a policy rather than an event. _[earned 2026-08-11]_
+
 ## Gotchas
+
+### W5: `waitFor` takes a synchronous probe, and an `async` one silently makes the wait a no-op
+
+`waitFor(async () => (await exists(path)) ? true : undefined, …)` returns a *promise* on every tick. A promise is never `undefined`, so the very first poll "succeeds", the wait returns immediately, and every assertion after it runs against a folder nothing has happened in yet. The test passes, proves nothing, and looks like the most convincing test in the file. **Fix/policy:** probes are synchronous — `existsSync`, a captured array's length, a locator count already resolved. If a probe genuinely must await something, the helper needs to await it, and that is a change to the helper rather than to one call site. Worth checking on sight in any new suite: an `async` arrow passed to a poller is a defect until proven otherwise. _[earned 2026-08-11]_
+
+### W6: A helper that clicks a folder open closes it the second time a test calls it
+
+A `select(path)` helper that clicks every ancestor on the way down works perfectly in the first test that uses it and silently collapses the tree in the second, because clicking a folder is a *toggle*. The failure surfaces as "element not found" three lines later, which reads like a rendering bug. **Fix/policy:** helpers that navigate a tree check the state before acting — read `aria-expanded` and click only when it is shut — so calling one twice is the same as calling it once. Any test helper that drives a toggle needs the same treatment. _[earned 2026-08-11, Playwright 1.62.1]_
 
 ### W1: Asserting on the exact shape of formatted output tests the formatter's accidents
 
@@ -83,6 +99,11 @@ Anything sized through `requestAnimationFrame` — dockview's whole grid, among 
 - `kernel-2d/playwright.config.ts` — the browser harness: how the editor is started, on which ports, against which throwaway project (V8).
 - `kernel-2d/tests/editor/shell.spec.ts` — the browser suite as it stands, and the worked examples of V9, W3, and the screenshot habit below.
 - `kernel-2d/tests/editor/assets.spec.ts` — V11, and the panel's behaviour against the real sample folder.
+- `kernel-2d/tests/editor/inspector.spec.ts` — every state a panel can be in, asserted as the sentence the human reads, plus the tree-navigation helper of W6.
+- `kernel-2d/tests/sidecar/meta-schema.test.ts` — V7 for the `.meta` format, and the rejections that make it a contract.
+- `kernel-2d/tests/sidecar/meta-files.test.ts` — V12: the sidecar's write privilege held to exactly its three lines, against a real filesystem.
+- `kernel-2d/tests/sidecar/meta-generation.test.ts` — the same rules through the running service (V13), including the "within a second" budget and the assertion that the folder settles rather than feeding itself.
+- `kernel-2d/tests/sidecar/meta-endpoint.test.ts` — the answer the Inspector receives over the wire, and every path-escape attempt refused.
 - `kernel-2d/tests/editor/test-project.ts` — the throwaway project the browser tests point the editor at, built at run time under `tests/.tmp/` and git-ignored (V10).
 - `kernel-2d/tests/sidecar/events.test.ts` — the change feed end to end: real folder, real watcher, real HTTP stream, including the reader that parses server-sent frames and the ordered teardown a live stream needs.
 - `kernel-2d/tests/scripts/sample-project.test.ts` — how a content generator is held to its promises: real file formats, identical bytes on every run, and never touching an unmarked file.

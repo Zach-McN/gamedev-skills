@@ -27,7 +27,27 @@ There is one conversion helper at the boundary and nothing else constructs a pat
 
 The file tree is computed per request and written to no file, and it is still defined as a Zod schema rather than a TypeScript type. **Reason:** the consumer is a separate process (the editor, or a human with a browser), so the shape is a contract across a boundary regardless of whether it lands on disk — and the round-trip test that guards it is only possible if a validator exists. _[earned 2026-08-11]_
 
+### T5: A format with two producers gets one defaults factory, and they may still mint ids differently
+
+The `.meta` format is written by the sidecar (for a file the human just dropped in) and by the sample-project generator (for content it authored). Both build their document from the same `defaultMeta` / `defaultImportSettings` functions in the schema module, so "what a fresh document looks like" is defined once. **They do not share id minting, and should not:** the sidecar mints random ids, the generator derives its ids from the file path so re-running it produces byte-identical output. **Reason:** the two differ in what they need from an id — uniqueness versus determinism — and agree on everything a *reader* can observe, because an id is opaque. Sharing the defaults prevents the drift that matters, one writer quietly emitting a different shape; forcing the id minting to be shared would break the generator's re-runnability for no reader's benefit. _[earned 2026-08-11]_
+
+### T6: Ids are validated as non-empty strings, never against a pattern
+
+The convention (16 lowercase hex characters) lives in the function that mints them; the schema requires only a non-empty string. **Reason:** the schema's job is to catch drift between the format's own writers, and every writer goes through the minting function anyway — so a pattern adds nothing there, and costs something real elsewhere. It would turn an id a human typed by hand into a parse failure, and in a format whose whole promise is "read, never regenerated" a parse failure means the editor refusing to open a file it also refuses to fix. _[earned 2026-08-11]_
+
+### T7: A field that appears twice in one document gets a `refine` saying the two must agree
+
+`AssetMeta` states its type at the top level, where a reader looks for it, and again inside `importSettings`, where it discriminates the union. One `.refine` asserts they match. **Reason:** the duplication earns its place — one occurrence is for reading, the other for narrowing — but duplication without a check is just two places to be wrong. The line costs nothing and turns "somebody edited one of them" from a bug that surfaces in a panel into a parse error at the boundary. _[earned 2026-08-11, Zod 4.4.3]_
+
+### T8: A served answer *about* a document is a different format from the document
+
+`GET /meta` does not return an `AssetMeta`. It returns a small envelope carrying the path asked about, a status, the meta when there is one, and — when there is a file that will not parse — the reason and the file's raw text. **Reason:** the two answers that are not a document (there isn't one; there is one and this editor cannot read it) are the answers a panel most needs to say something useful about, and they have nowhere to live in the document's own schema. Bolting them on by making every field optional would destroy the document schema as a contract. Keep the envelope thin: anything the consumer can derive from the shared vocabulary it already imports (what type an extension is, say) does not belong in it. _[earned 2026-08-11]_
+
 ## Gotchas
+
+### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
+
+Zod infers an optional field as `T | undefined`, and with `exactOptionalPropertyTypes: true` a hand-written interface declaring `field?: T` is not assignable from it — the error names the *schema* line, not the interface, so it reads like a Zod problem. **Fix/policy:** write optional fields in the interface as `field?: T | undefined`. Same for any options object a strict project passes around with possibly-undefined values. _[earned 2026-08-11, Zod 4.4.3, TypeScript 5.9.3]_
 
 ### F1: A round-trip test proves the schema and the writer agree about what is kept, not that nothing was dropped
 
@@ -37,3 +57,6 @@ Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify
 
 - `kernel-2d/sidecar/tree-schema.ts` — the file-tree format: `ProjectTree`, `DirectoryNode`, `FileNode`, and the format/version literals. The first format in the kernel, and the worked example of T1–T4.
 - `kernel-2d/tests/sidecar/tree-schema.test.ts` — the round-trip test every subsequent format copies.
+- `kernel-2d/sidecar/meta-schema.ts` — the `.meta` format, and the worked example of T5–T7: the discriminated union on `type`, the defaults factory both writers share, and the extension→type vocabulary.
+- `kernel-2d/sidecar/meta-view-schema.ts` — T8: the answer *about* a `.meta`, as distinct from the `.meta` itself.
+- `kernel-2d/tests/sidecar/meta-schema.test.ts` — the round trip plus the rejections that make the schema a contract rather than a suggestion.
