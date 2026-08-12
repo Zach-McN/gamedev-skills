@@ -211,6 +211,20 @@ So the renderer's context answers the sharper question directly: `useDrawScene` 
 
 **Reason:** two features reached for the loose version first and were wrong the same way a session apart. Framing a level against half of itself puts it off-centre permanently, and was patched with three ad-hoc conditions inside an effect. Play offered a render too early starts against a baseline the human never saw — so the comparison that is the entire point of the feature checks the running level against a half-drawn one. The tell is a test that passes alone and fails in a full suite run: the race widens when the machine is busy, which is also when nobody is watching. Answer it once, in the context that actually knows, instead of deriving it from "is there a report" at each call site. _[earned 2026-08-12]_
 
+### U28: A third inspector body cost nothing, and the pattern that made it free is worth naming
+
+Project settings — which level the game starts on — became an editable body in the Inspector rather than a panel of its own. The whole change was one branch in `DocumentBody`, keyed on the `format` the document carries, plus a component beside the prefab's and the entity's.
+
+Three things it confirms, each of which was a decision made earlier and is now evidence rather than intention:
+
+- **No new panel.** The reachable route already existed: click the file, the Inspector describes what is in it. A *Project* panel would have added a permanent box to the default layout for a setting somebody touches once a month, and U1's declaration file is where the cost of a panel is paid.
+- **Keyed on what the document says it is, never on its name.** `project.json` is a convention in the folder map; the branch reads the `format` literal (U11 again, and `editor-kernel` D22's registry). A human who keeps their settings somewhere else still gets the controls.
+- **Undo, autosave and disk-wins arrived for free**, because it is an ordinary document going through the transaction API. Worth stating in the hand-off as a *capability* — "Ctrl-Z takes the choice back" — since the human has no way to know that fell out of the architecture rather than being built.
+
+**And a reference with no id to fetch is validated by reading the file, not by trusting the path.** `TexturePicker` is asynchronous because it fetches the texture's id (D5). This picker is asynchronous for a different reason: there is no id to fetch, and nothing about a `.json` path says whether the file at it is a level. So the list offers every document in the project and the *pick* reads the file — refusing "enemy-slime.json is a prefab, not a level" instead of writing a path the export would have to complain about later. The list stays wide on purpose: narrowing it would mean reading every `.json` in the project up front, to save one read of the one that was chosen.
+
+The picker is **not** lifted into a file of its own. There is exactly one thing in the kernel that points at a level; U25's sharing rule ran the other way here, and a shared component built for one owner is a guess about what two would have in common. _[earned 2026-08-12]_
+
 ## Gotchas
 
 ### UG6: React's `onWheel` cannot `preventDefault`, and a middle-button `mousedown` must
@@ -265,7 +279,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now.
 - `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, and U22: the one control that puts a file in a human's project.
-- `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store.
+- `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store. Three document formats have a body of their own now, each reached by what the document says it is.
+- `kernel-2d/editor/panels/ProjectInspector.tsx` — U28: the third inspector body, the startup-level picker that reads a file before it writes a path, and the sentence that says what the current choice resolves to.
+- `kernel-2d/editor/shell/zoom.ts` — what is left of the zoom controls after the ladder moved into the shipping layer (`editor-kernel` D20): stepping, and the wording.
 - `kernel-2d/editor/panels/TextureSettings.tsx` — the first editable controls, hand-written, and the worked example of U14. Every one of them goes through the transaction API and none of them knows undo exists.
 - `kernel-2d/editor/shell/useUndoShortcuts.ts` — U13, and the only keyboard handler in the editor.
 - `kernel-2d/editor/panels/ViewportPanel.tsx` — the scene, and the worked example of U10 at its widest: no scene open, opening, gone, unreadable, empty, a texture it cannot draw, everything off screen, and the selected entity off screen are eight different sentences. The last two arrived with the camera, and they *replace* the count rather than joining it — see UG8 for why that is layout as well as prose.

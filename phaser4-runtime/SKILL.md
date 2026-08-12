@@ -41,6 +41,19 @@ Anything that says what the renderer is up to — a status attribute, a test hoo
 
 Two practicalities. The residue is honest and worth stating in the code: an entity at a fractional position is still drawn at a fractional position and is still soft, which is the designer's own number rendered faithfully. And whatever the renderer *reports* should be the camera it was handed rather than the nudged one — the snap is sub-pixel presentation, and reporting it makes the caller's own state disagree with itself the next time it compares. _[earned 2026-08-12, Phaser 4.1.0]_
 
+### P6: A shipped game is the same renderer with a different way of reading files, and that is all it is
+
+An exported game boots one `Phaser.Game` through the same `createSceneView` the editor embeds, hands it a request from the same `loadScene`, and draws. Everything that differs is outside the renderer: where the bytes come from (`fetch` rather than a development service), and who decides where to look.
+
+Four decisions the shipped side had to make that the editor never had to, each with an obvious wrong answer:
+
+1. **Fit the level to the window, on a whole step from the shared ladder.** Framing needs the extent, and the extent is only known once something has been drawn — so the first pass lands at whatever scale the game booted with and a second settles it. It settles rather than oscillating for the reason `editor-ui` U17's fit does: after one pass the wanted scale *is* the drawn scale. Fitting at an exact fractional ratio instead would make a shipped game look *worse* than the editor it came out of, which is the one thing this whole arrangement exists to prevent.
+2. **A resized window re-frames the level, which is the opposite of what the editor does** — and the reason is not preference. A scene camera in the editor is something you drive, so a resize has to keep the human's place (`editor-kernel` D23). A shipped game has no input, no camera controls and nothing else that would ever move the view, so a window made smaller would cut the level in half and leave it that way for good. Revisit the day a game has a camera of its own.
+3. **The asset version is a constant, and the URL is the path.** Nothing changes underneath a build, so one build is one number and each texture reaches the GPU once. A content hash or a cache-buster in the query string would make one build's URLs differ from the next's, which breaks "export twice, get the same folder".
+4. **The game reports what it drew, on the DOM.** Same instrument as P4 and `editor-verification` V17, and here it earns a second keep: it is how somebody with a browser's inspector open finds out why a folder they were sent is blank. A global handle is published alongside it for a console, and no test reaches for it — the attributes are the readable surface.
+
+**And still no third `Phaser.Game`.** P2's amendment said a new game is warranted by a new surface and never by a new mode; an exported page is a new *document*, which gets its own game because it is its own window, and that is the same rule rather than an exception to it. Nothing about the renderer changed to make this work. _[earned 2026-08-12, Phaser 4.1.0]_
+
 ## Gotchas
 
 ### G1: v3 contamination — AI-generated Phaser code defaults to Phaser 3
@@ -107,4 +120,6 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/runtime/scene/scene-view.ts` — the second surface of P2 as amended: one game, told which scene and which textures, reporting what it drew.
 - `kernel-2d/runtime/scene/entity-layer.ts` — display objects kept in step with a list of entities by id, updated in place rather than rebuilt, and the `getBounds()` report of G8.
 - `kernel-2d/runtime/scene/coordinates.ts` — the y-up-to-y-down flip, the rotation sign, the camera, and the pixel-grid snap of P5 — with no Phaser import, so every one of them is testable without a browser.
-- `kernel-2d/runtime/scene/load-scene.ts` — what feeds the renderer when the editor is not there to. Imports Phaser nowhere and takes only a type from `scene-view.ts`, so it runs and is tested in plain Node.
+- `kernel-2d/runtime/scene/load-scene.ts` — what feeds the renderer when the editor is not there to. Imports Phaser nowhere and takes its two types from `scene-request.ts`, so it runs and is tested in plain Node — and, since the export command, is *called* from plain Node.
+- `kernel-2d/runtime/web/start-game.ts` — P6: the whole of what a shipped game does. One renderer, a `fetch` reader, a fit on the shared ladder, and the report it leaves on the page.
+- `kernel-2d/runtime/scene/scale-steps.ts` — the zoom ladder, which is in the shipping layer because a shipped game frames its own level for the same pixel-art reason the editor does.

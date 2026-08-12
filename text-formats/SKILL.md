@@ -89,6 +89,20 @@ The prefab format spent one session inside `scene-schema.ts` because a prefab ho
 
 **The lesson that outlives the detail.** A constraint recorded without a measurement will shape designs for as long as nobody re-checks it, and it never announces itself — the code it produced compiles and passes. Anything in these skills phrased as "X is impossible" and not marked as measured is a candidate for a gardening pass to re-test. Cheap to check, and the cost of believing it is a file that quietly grows past what it should own. _[earned 2026-08-12, TypeScript 5.9.3, Vite 8]_
 
+### T15: A reference with nothing to witness it is a path alone, said out loud — not a path plus an id that means nothing
+
+`project.json` names the level a game starts on, and it names it as a plain project-relative path. Every other reference in the kernel carries a path *and* a stable id, because the path resolves it and the id notices when the file at that path is no longer the one it was written against (`editor-kernel` D5). This one cannot: a level has never carried an id, and only things pointed at from *inside* a level ever needed one (D24).
+
+Three options, and the reason the middle one wins:
+
+- **Path plus an id there is nothing to compare against.** Two fields, one of them permanently unread. An unread field is a field that is quietly wrong, and the next reader assumes it is checked because every other id is.
+- **Path alone, with the schema saying why.** One field that works, and a comment naming the condition under which it should change — "if levels gain ids for another reason, this is the first place that should start carrying one".
+- **Give levels an id so the reference can look like the others.** A format change to every level ever saved and to every writer of the format, bought for a warning nothing else in the kernel needs yet.
+
+**Reason, generalised:** consistency between references is worth having, and it is worth *less* than every field being load-bearing. When a new reference cannot honour a convention, write down which half it is missing and why, in the schema, next to the field. That comment is the thing that stops a later session either trusting a dead field or "fixing" the inconsistency at the cost of a migration.
+
+A second, smaller decision in the same file, for the same instinct: **"not chosen yet" is `nullable`, never optional.** An absent key and a key set to `null` would be two spellings of one state, and the editor would have to pick one to write while every reader handled both. _[earned 2026-08-12, Zod 4.4.3]_
+
 ## Gotchas
 
 ### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
@@ -108,7 +122,10 @@ Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify
 - `kernel-2d/runtime/formats/meta-schema.ts` — the `.meta` format, and the worked example of T5–T7, T9 and T10: the discriminated union on `type`, the defaults factory every writer shares, the extension→type vocabulary, and why it sits in the layer that ships.
 - `kernel-2d/sidecar/meta-view-schema.ts` — T8: the answer *about* a `.meta`, as distinct from the `.meta` itself.
 - `kernel-2d/runtime/formats/scene-schema.ts` — the scene format *and* the prefab format, and the worked example of T12 and T14: the flat ordered entity list, the transform as a field rather than a component, the open component map, the registry beside it, and the reference between the two documents.
-- `kernel-2d/sidecar/document-view-schema.ts` — T13: the one list of document formats, and the answer *about* a document.
+- `kernel-2d/runtime/formats/project-schema.ts` — T15: the game's own settings, one field that works, and the reference that is a path alone with the reason written beside it.
+- `kernel-2d/tests/runtime/project-schema.test.ts` — the round trip, the hand-added key that survives it, and the four refusals.
+- `kernel-2d/scripts/export/manifest-schema.ts` — a format that describes a *folder* rather than a document: what an export wrote, addressed to the next export. The worked example of T4 for build output.
+- `kernel-2d/sidecar/document-view-schema.ts` — T13: the one list of document formats, and the answer *about* a document. Three formats in it now, and adding the third cost the same one line the second did.
 - `kernel-2d/tests/runtime/scene-schema.test.ts` — the round trip, and the unknown component that survives it.
 - `kernel-2d/tests/sidecar/document-endpoint.test.ts` — F1 sharpened, through the real service: a key added by hand surviving a write, at the top level and nested.
 - `kernel-2d/tests/sidecar/meta-schema.test.ts` — the round trip plus the rejections that make the schema a contract rather than a suggestion.

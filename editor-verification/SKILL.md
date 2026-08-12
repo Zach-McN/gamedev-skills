@@ -43,6 +43,12 @@ A `waitFor(probe, description, timeout)` helper polls every 10ms and fails with 
 
 Playwright's `webServer` runs `npm run editor`, pointed at a throwaway project through `KERNEL_PROJECT`, with `reuseExistingServer: false`. **Reason:** two payoffs for one line of config. The one command is then itself under test — if it breaks, the browser suite goes red rather than passing against a hand-assembled substitute that only the tests know how to start. And refusing to reuse an existing server stops a run from silently attaching to the editor the human has open, where every assertion about the project folder would be a lie. Both ports are shifted off their defaults for the same reason: a test run must not collide with a live editor. _[earned 2026-08-11]_
 
+**Extended to every command the suite depends on, which is the whole point of the rule.** There are now two servers and a build step, and each is the command a human would run: the sample project is written by the real generator, the exported game is built by running `npm run export` **as a process**, and it is served by `npm run serve`. Three commands under test on every browser pass, for three lines of config.
+
+Two practicalities. **The order is forced and is not obvious:** the project is written, the export is built from it, and only then can the static server be pointed at the folder — and Playwright starts its servers before anything else, so all of that has to finish while the config file is still loading. Running the export with `execFileSync` rather than by importing its functions is what makes that possible in a synchronous config, and it is the more honest test anyway. **Surface the command's own output on failure:** `execFileSync` puts stdout somewhere nobody looks, and a failure here stops the entire suite with "Command failed" explaining none of it. Catch it and re-throw with the captured output.
+
+One thing to avoid: do not export a URL constant from `playwright.config.ts` for a spec to import. The spec would re-run the config's top-level work — writing the project, building the export — inside the test process. Put shared addresses in a module of their own. _[earned 2026-08-12]_
+
 ### V9: A negative UI state is produced by cutting the request, not by tearing down the service
 
 The "sidecar is not answering" state is tested by aborting the `/api/` route in the browser and reloading — after first asserting the connected state on the same page. **Reason:** V6's anchoring rule, applied to the browser: the warning is only meaningful once the same test has seen the strip say "connected". Cutting the request at the browser is also far cheaper and more deterministic than stopping and restarting the real service mid-run. _[earned 2026-08-11]_
@@ -126,7 +132,63 @@ Three parts, each load-bearing. **`force` on the clicks**, because an ordinary c
 
 **Reason:** it is the only formulation that tests the guarantee rather than the mechanism. Asserting that a store flag is set tests the flag; asserting the buttons are disabled tests the buttons. Neither would notice a third path to disk. _[earned 2026-08-12]_
 
+### V26: Two pictures that cannot share a canvas are compared in the subject's own units
+
+V24 compares play mode with the editing view in screen pixels, and its first condition is that both came through the same camera onto the same canvas — mismatched size or camera is its own answer, never a silent pass. An exported game cannot satisfy that: it is a browser window and the editor's viewport is a docked panel, so the two frame the level at different zooms *by nature*, and every screen number differs while none of the differences is about what is being checked.
+
+So the comparison moves into **the level's own units**, where the two agree exactly — a sprite's rectangle there is decided by its transform, its pivot and its frame size, and by nothing about the window it is seen through. The exported game and the editor's viewport each publish that projection, from **one shared function in the runtime** (`kernel-2d/runtime/scene/drawn-in-scene.ts`), and the test compares two plain lists.
+
+Four things that make it a real check rather than a reformulation:
+
+- **The projection must invert through the camera the renderer *drew* with, not the one it was asked for.** Pixel art is kept crisp by nudging the camera under a device pixel (`phaser4-runtime` P5), and the renderer reports the un-nudged camera on purpose. Inverting through that one is wrong by a fraction of a level unit — an eighth at 8× — which is small enough to read as noise and large enough to fail. So the report gained a second field for the camera actually used, and the test that catches this is the only one where the two differ; every other test in the file passes either way.
+- **Assert that the two zooms are genuinely different.** If they ever coincided, the test would pass while checking something much weaker than it claims to. One line, and it is what stops this quietly degrading into a screen-pixel comparison.
+- **Draw order is part of the picture.** Two levels holding the same entities in a different order overlap differently, and a comparison keyed by id alone calls them identical.
+- **The instrument gets its own tests, including both edges of the tolerance.** A comparison that always answers "the same" passes every test written from the happy path. Each way two pictures can differ is a test, and so is "a thousandth of a unit passes, a tenth fails".
+
+**Where it lives.** In `tests/`, because no product code compares itself to an editor — the same line `editor/shell/play-comparison.ts` is on, one layer out. Its home is `kernel-2d/tests/instruments/`, a folder for the suite's own tools, because a pure helper the browser suite imports has to compile in the Node project and its Vitest test cannot sit in the Playwright folder (V15). Instrument and test beside each other; the spec imports the instrument. _[earned 2026-08-12]_
+
+### V27: An artefact is proved clean by absence, and absence needs two different instruments
+
+"There is no editor in this folder" is `editor-kernel` D1 as something checkable, and it takes two checks because it fails in two unrelated ways.
+
+- **A search for names that only exist on the far side of the boundary**, over the files the build *generated*. That is the check for editor code arriving through a path the import rule does not model — a bundler resolving something unexpected, a later session pointing the build at a different entry.
+- **The folder listing has to equal the manifest of what was written.** That is the check for a *stray*: a file nobody bundled, which a name search cannot see because it does not know to look at it.
+
+Three rules that came out of building it:
+
+1. **Search only what was generated, never what was copied.** The copied files are the human's levels and import settings, byte for byte. A level whose entity happened to be called something on the list would be refused for a reason nobody could act on, and no quantity of a human's data is editor code.
+2. **The command does the check, not only the suite.** The human asked to be told rather than left to find it, so a hit is a refusal from `npm run export` with the file and the marker named. The test asserts the same thing on a real folder — because a check that refuses is indistinguishable, from the outside, from a check that never ran.
+3. **Assert that every marker still matches the thing it is looking for.** Tightening a marker into something unmatchable is a silent way to turn the whole check off, and it looks like a green suite.
+
+**And prove the absence from the page as well as from the disk.** The exported page is asserted to have no assets panel, no inspector, no docking container, and to have made no request to the editor's service — watched with `page.on('request')` from outside the browser rather than from inside the page. That is the observable form of the claim, in the same vocabulary the human used. _[earned 2026-08-12]_
+
 ## Gotchas
+
+### W15: A "this must not appear" search over unminified output collides with the engine's own prose
+
+The first real run of the export's editor-marker check refused a perfectly good folder, twice: `immer` matched the game engine describing a shader as "immersive", and `/api/` matched a documentation link ending `doc/api/jsts_geom_Triangle.js.html`. Both are the failure the check exists to prevent, pointed at the wrong thing — **which is worse than not checking, because it makes a working command look broken** and the natural next move is to loosen the check until it stops complaining.
+
+The cause is structural rather than bad luck: the bundle is deliberately unminified so the identifiers are readable, and that means several thousand lines of the engine's comments are in the same haystack.
+
+**Fix/policy, two rules that keep a list of forbidden strings honest:**
+
+- **Match as a whole word wherever the marker's own edges are letters.** `\bimmer\b` does not match `immersive`, and no future one-word package name will either. Build the pattern from the string rather than hand-writing regexes per entry.
+- **A marker whose edges are *not* letters has to be specific enough to survive prose.** `\b` between two non-word characters matches nothing, so applying it blindly to `/api/document` or `.tsx` would silently switch those markers off — the worst outcome available, since the check keeps passing. Spell such markers out until they cannot appear by accident: `/api/` became the three endpoints the editor actually uses.
+
+Keep both false positives as tests. They are the cheapest possible regression guard and they document why the list looks the way it does. _[earned 2026-08-12]_
+
+### W16: The browser suite run back-to-back exhausts the machine's sockets, and the failures look like product bugs
+
+One full pass of the browser suite leaves roughly **3,800 sockets in `TIME_WAIT`** — a page load per test, and every module Vite serves. Windows holds those for a couple of minutes. Run the suite six or seven times in a row while hunting something and the machine runs out, at which point tests start failing in ways that point anywhere but the cause:
+
+- `page.goto: net::ERR_NO_BUFFER_SPACE` in a `beforeEach`, which reads as the editor failing to start;
+- `SyntaxError: Unexpected end of JSON input` from a probe that reads a file the editor is writing, which reads as a race in the product's autosave.
+
+Two different specs failed on two consecutive runs, neither of them the spec under development, and neither reproduced in 108 targeted repeats of the specs that had just been written.
+
+**Fix/policy:** before believing a browser-suite flake, count them — `netstat -ano | grep -c TIME_WAIT` — and check for stray listeners a killed run left behind (`netstat -ano | grep LISTENING`). If the count is in the thousands, wait for it to drain and run once more; that is the whole diagnosis. Kill any server started by hand for a manual check, because an orphan holding a port outlives the shell that started it.
+
+The general shape, and the reason this is worth writing down rather than shrugging at: **a flake that appears only after several consecutive runs is evidence about the machine, not about the code**, and the instinct to harden whichever test happened to draw the short straw makes the suite worse. Ask what changed between the green runs and the red ones; if the answer is "nothing but the number of runs", the answer is the runs. _[earned 2026-08-12, Windows 11, Playwright 1.62.1]_
 
 ### W13: A gesture is many events, so reading right after it reads the middle of it
 
@@ -237,6 +299,12 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/editor/test-project.ts` — the throwaway project the browser tests point the editor at, built at run time under `tests/.tmp/` and git-ignored (V10).
 - `kernel-2d/tests/sidecar/events.test.ts` — the change feed end to end: real folder, real watcher, real HTTP stream, including the reader that parses server-sent frames and the ordered teardown a live stream needs.
 - `kernel-2d/tests/scripts/sample-project.test.ts` — how a content generator is held to its promises: real file formats, identical bytes on every run, and never touching an unmarked file.
+- `kernel-2d/tests/scripts/export.test.ts` — a command that produces an artefact, held to its refusals first: ten of them, none needing a build, plus the four tests that do build — including "export twice, byte-identical folders".
+- `kernel-2d/tests/instruments/drawn-comparison.ts` and its test — V26: two pictures compared in the level's own units, and each way they can differ named.
+- `kernel-2d/tests/runtime/drawn-in-scene.test.ts` — the projection V26 rests on, including the one test that distinguishes the drawn camera from the requested one.
+- `kernel-2d/tests/editor/export.spec.ts` — V26 and V27 end to end: a served folder that plays the game, checked against play mode, moved somewhere else, opened off the disk, and proved to hold no editor.
+- `kernel-2d/tests/editor/project-settings.spec.ts` — choosing the starting level, in the human's units: it reaches the file, survives a reload, refuses a prefab, and Ctrl-Z takes it back.
+- `kernel-2d/tests/editor/test-export.ts` — V8 extended: the exported game the browser suite opens, built by running the real command.
 
 ### V21: A create is tested from the side where it refuses, and a picture waits for everything it is a picture of
 
