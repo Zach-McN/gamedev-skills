@@ -59,6 +59,26 @@ The `.meta` schema was written by the filesystem service and lived beside it, an
 
 `FileNode` carries `mtimeMs` alongside `size`. **Reason:** size does not identify a version — a re-export from an art tool very often produces the same byte count — so anything keyed on size alone keeps serving the old contents after the human's edit (`editor-kernel` G11). Two details: it is `z.number().nonnegative()` rather than `.int()`, because some filesystems report finer than a millisecond and rounding would make the schema disagree with `stat`; and it costs nothing on disk because this format is served rather than stored (T4). _[earned 2026-08-11]_
 
+### T12: A format with an open extension point pairs it with a registry, and validates by *checking* rather than replacing
+
+A scene's `components` is `z.record(z.string(), z.unknown())` — any type key, any shape. Beside it, in the same file, is a registry naming the component types the kernel understands and the schema for each. A known type is validated against its schema; an unknown type is carried through untouched and reported to the Inspector as something this editor has no controls for.
+
+**Reason, and the cost, stated plainly because this is a real concession.** A genre layer will add components, and requiring a kernel schema change for each is the thing that makes a kernel ossify. The price is that **the document schema stops being the whole truth about a document** (`editor-kernel` D6): a scene can hold a component this kernel has never heard of, and `tsc` will not know. What replaces D6's guarantee is the registry — one object, in one file, typechecked, and the same list the validator reads — so "what does this editor understand?" still has exactly one answer. Judge the bargain again if the registry ever grows a second copy anywhere.
+
+Three details that are easy to get wrong, in the order they bite:
+
+1. **Known components are checked, never replaced.** Running each value back through its own schema and storing the result would strip any key the component schema does not model — which is precisely what T9's loose objects exist to prevent, reintroduced one level down. A `superRefine` that validates and discards its result is the right shape, however odd it looks.
+2. **An unknown type is not an error and a known-but-malformed one is.** These are different sentences and different situations: the first is most likely a newer editor or a genre layer, the second is a bug in something. Collapsing them into "invalid" makes the editor wrong about the common case.
+3. **The registry lives in the schema file itself**, not beside it, when that file is compiled by more than one TypeScript project. `runtime/formats/scene-schema.ts` may have no relative imports (T10), and the entity schema needs the registry, so a registry in its own module would either break the Node build or force a circular import.
+
+_[earned 2026-08-11, Zod 4.4.3]_
+
+### T13: One list, and everything else derived from it
+
+The service's document registry is `{ [format]: schema }` and the union type is `z.infer` over its values. Adding a format is one line, and the union, the "is this a format we know?" lookup and the validator that guards a write all follow from it.
+
+**Reason:** the tempting alternative is a map for lookup plus a hand-written union type, which are the same list written twice and drift the first time somebody adds to one. The reason it cannot simply *be* a discriminated union is worth knowing: a union answers "did this parse", and the editor needs "is this a format I know" and "is this document malformed" to be different answers with different sentences (`editor-kernel` D22). Keying the map on the `format` literal every document already carries is what makes both available from one structure. _[earned 2026-08-11, Zod 4.4.3]_
+
 ## Gotchas
 
 ### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
@@ -77,4 +97,8 @@ Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify
 - `kernel-2d/tests/sidecar/tree-schema.test.ts` — the round-trip test every subsequent format copies.
 - `kernel-2d/runtime/formats/meta-schema.ts` — the `.meta` format, and the worked example of T5–T7, T9 and T10: the discriminated union on `type`, the defaults factory every writer shares, the extension→type vocabulary, and why it sits in the layer that ships.
 - `kernel-2d/sidecar/meta-view-schema.ts` — T8: the answer *about* a `.meta`, as distinct from the `.meta` itself.
+- `kernel-2d/runtime/formats/scene-schema.ts` — the scene format, and the worked example of T12: the flat ordered entity list, the transform as a field rather than a component, the open component map and the registry beside it.
+- `kernel-2d/sidecar/document-view-schema.ts` — T13: the one list of document formats, and the answer *about* a document.
+- `kernel-2d/tests/runtime/scene-schema.test.ts` — the round trip, and the unknown component that survives it.
+- `kernel-2d/tests/sidecar/document-endpoint.test.ts` — F1 sharpened, through the real service: a key added by hand surviving a write, at the top level and nested.
 - `kernel-2d/tests/sidecar/meta-schema.test.ts` — the round trip plus the rejections that make the schema a contract rather than a suggestion.

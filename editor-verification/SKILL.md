@@ -131,6 +131,24 @@ A careful `mouse.down` → several `mouse.move`s → `mouse.up` sequence moves t
 
 Anything sized through `requestAnimationFrame` — dockview's whole grid, among others — stays at its initial dimensions in a preview pane that is not compositing, so panels measure 100px and splitters report themselves disabled. Headless Chromium under Playwright *does* paint, so the suite is trustworthy where an embedded preview is not. **Fix/policy:** when an embedded browser shows a collapsed layout, reproduce it in the Playwright run before believing it. See `editor-ui` UG1. _[earned 2026-08-11]_
 
+### W10: A test that drives the editor after hand-editing a file must wait for the *editor* to have taken it, not for the file to be on disk
+
+A test wrote extra keys into a scene, polled until the file contained them, then typed into a field and asserted the keys survived. The poll only ever proved the test's own write had landed — the editor had not re-read yet, so the keystroke was applied to the document it was still holding and the write put the pre-edit version straight back over the keys. The test failed for a reason that reads exactly like the feature being broken.
+
+**Fix/policy:** wait for something *on screen* that could only be true if the editor had taken the file. Make the hand-edit change something visible — rename an entity, add one — and wait for that, then act. The general rule: after touching a file the editor is watching, the next assertion must be about the editor, never about the file. Same shape as V6's anchoring rule, applied to a round trip rather than to an event. _[earned 2026-08-11]_
+
+### W11: An attribute used as a test hook has to be unique across the whole page, not within the panel that owns it
+
+The Hierarchy's rows carried `data-entity-id`, and so did the SVG group that outlines the selected entity in the viewport — so `[data-entity-id]` counted one more row than existed, and a list of names came back with an empty string on the end. Both readings are reasonable in the file that wrote them; together they are wrong, and the failure looks like an off-by-one in the panel.
+
+**Fix/policy:** two ways out, and use both. Name the attribute for what it *is* rather than for what it contains, so the overlay says `data-selected-entity` and cannot collide; and scope the locator to the panel that owns it. Worth checking on sight whenever a second panel starts describing the same objects: the moment two panels talk about entities, their test hooks are in the same namespace. _[earned 2026-08-11, Playwright 1.62.1]_
+
+### W12: A tab sharing a dockview group is not on screen, so a spec must bring it forward before asserting anything
+
+The Texture tab sits behind the Viewport in the same group. Every assertion about it — the canvas being visible, a caption, an overlay — is against a panel that is not rendering until something activates it. Selecting a texture does that in the product; a spec asserting the empty state *before* selecting anything has to click the tab itself.
+
+**Fix/policy:** a shared `showPanel(page, title)` helper that clicks the tab and waits for `aria-selected`, called in `beforeEach` for any spec whose subject shares a group. Do not reach for `{ force: true }` or for asserting against hidden elements — the panel really is not there, and a test that pretends otherwise is asserting against something the human cannot see. _[earned 2026-08-11, dockview 8.0.0]_
+
 ## Contracts
 
 - `kernel-2d/tests/fixtures/project-fixture.ts` — the temp-project builder, `waitFor`, and `delay`. Everything filesystem-shaped in the suite starts here.
@@ -145,7 +163,12 @@ Anything sized through `requestAnimationFrame` — dockview's whole grid, among 
 - `kernel-2d/tests/editor/select-asset.ts` — the tree-navigation helper of W6, shared by every spec that needs something selected.
 - `kernel-2d/tests/editor/import-settings.spec.ts` — the acceptance criteria for editing, transcribed in the human's units (V1), plus the snapshot-and-restore of V14.
 - `kernel-2d/tests/store/documents.test.ts` — the transaction API on its own (V15, V16): one stack across two files, what merges into one undo step, and every way a re-read can be stale.
-- `kernel-2d/tests/editor/viewport.spec.ts` — V17 and V18: a canvas feature asserted without comparing a single pixel, and the settle helper that keeps a layout-derived number honest.
+- `kernel-2d/tests/editor/texture.spec.ts` — V17 and V18: a canvas feature asserted without comparing a single pixel, and the settle helper that keeps a layout-derived number honest.
+- `kernel-2d/tests/editor/scene.spec.ts` — the same instruments one layer up: where an entity was drawn, whether a feet-pivoted sprite stands on its position, and a missing texture named rather than drawn as nothing.
+- `kernel-2d/tests/editor/hierarchy.spec.ts` — add, delete and reorder, each of them taken back by one press of Ctrl-Z. The behavioural proof that document-level undo covers a tool nobody wrote undo for.
+- `kernel-2d/tests/editor/restore-project.ts` — V14 for every file the editor can write, shared by every spec that changes the sample folder.
+- `kernel-2d/tests/editor/panels.ts` — W12: bringing a tab forward before asserting against it.
+- `kernel-2d/tests/runtime/scene-schema.test.ts` and `kernel-2d/tests/runtime/scene-coordinates.test.ts` — V7 for the scene format, and the y-up arithmetic under the pivot assertion.
 - `kernel-2d/tests/runtime/frames.test.ts` — the frame geometry, held to "every frame reported is a whole frame, and every pixel outside one is counted".
 - `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
 - `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and the runtime/editor boundary as a test rather than a promise (`editor-kernel` D20).
@@ -159,4 +182,6 @@ Anything sized through `requestAnimationFrame` — dockview's whole grid, among 
 - `kernel-2d/tests/sidecar/events.test.ts` — the change feed end to end: real folder, real watcher, real HTTP stream, including the reader that parses server-sent frames and the ordered teardown a live stream needs.
 - `kernel-2d/tests/scripts/sample-project.test.ts` — how a content generator is held to its promises: real file formats, identical bytes on every run, and never touching an unmarked file.
 
-**The screenshot habit.** One test in the browser suite asserts nothing and simply writes a full-window screenshot to its output path. It is not a visual-regression baseline — those are brittle across machines — it is a picture to look at when something is reported as looking wrong, which beats reasoning about the source. Keep exactly one; a suite full of them is noise.
+**The screenshot habit.** A test that asserts nothing and simply writes a full-window screenshot to its output path. It is not a visual-regression baseline — those are brittle across machines — it is a picture to look at when something is reported as looking wrong, which beats reasoning about the source.
+
+**One per surface that can look wrong on its own, and no more.** That is three now: the shell, the texture tab and the scene. The original rule said "exactly one", and what matters is the reason it moved rather than the number — a second canvas panel is a genuinely different picture, and reasoning about it from the shell's screenshot is the guessing this habit exists to avoid. A screenshot per *test* is still noise, and a screenshot of something with no picture in it always was.

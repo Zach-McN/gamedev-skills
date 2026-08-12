@@ -84,9 +84,34 @@ Three refusals belong to the write, each leaving the file byte-for-byte as it wa
 2. **A file it cannot parse is left alone.** A broken `.meta` is far more likely to be one a human is midway through editing than one worth replacing, and "the editor overwrote my file because it did not like it" is unrecoverable.
 3. **Deleting strays happens at startup only.** No OS reports a rename as a rename (G7), so a stranded sidecar during a session is as likely to be the removal half of a rename as it is to be rubbish — deleting there would throw away the stable id and settings of every file the human renames, mid-gesture. Doing it once at startup keeps that window shut. The cost, which was accepted knowingly rather than discovered: a rename *does* lose its id and settings at the next start, and that is the material a "fixup when files move" tool would otherwise have used. **Every removal is named in the startup banner**, because this is the one moment the service deletes anything and silence there would make the loss invisible. _[earned 2026-08-11]_
 
+### D22: The write privilege now covers documents, and the two guards that keep it from meaning "write anywhere"
+
+D17 restated, with the middle line widened so the editor can put a scene back:
+
+- of its own accord, creates a `.meta` when an asset has none, and deletes a stranded one at startup;
+- **replaces the whole contents of one file the editor names, when that file already exists and the document is valid in a format this editor knows;**
+- never modifies anything else, and never changes a file on its own initiative.
+
+Still three lines, and it stays three lines as prefabs and data tables arrive — that was the point of phrasing it around "a format this editor knows" rather than naming scenes. The registry of known formats is then the thing that has to stay current, and it is one object in one file.
+
+**"Valid document" is a statement about the body. Two more are needed about the target, and both are load-bearing:**
+
+1. **It never creates a file.** A path with nothing at it is refused rather than filled in. Making a new scene is a feature that does not exist yet; when it does it should be a deliberate one rather than a side effect of a typo in a path.
+2. **It only replaces a document with one of the format that is already there**, which means reading and parsing the existing file before writing. Without this, a perfectly valid scene document sent at the path of somebody's PNG overwrites their art — the document is valid, the path is inside the project, and *every other check passes*. This is the failure to hold in mind when widening any write: the checks were all about the thing being written and none of them about the thing being written over.
+
+**Keyed on the document's own `format` string, never on the path.** Where a file sits in the folder tree is a convention (`scenes/` is in the folder map, not in the code); what a document says it is, is a fact — the same ordering as `editor-ui` U11, and the first real payoff of the format literal every document has carried since T1. A consequence worth wanting: "this is not a format I know" and "this is a format I know and the file is malformed" are then *different* answers with different sentences, where a single discriminated union over all known formats would have collapsed them into one unhelpful "invalid". _[earned 2026-08-11]_
+
 ### D5: References carry both a stable ID and a human-readable path
 
 `"sprite": {"id": "a3f9", "path": "assets/textures/knight.png"}`. IDs are generated once and stored; a fixup tool reconciles the pair when files move. **Reason:** the two properties are irreconcilable in a single field. IDs survive renames but make files unreadable; paths stay greppable and let a session understand a scene by reading it, but break on every move. Carrying both costs a few bytes and removes the tradeoff. _[seeded 2026-08-11, report §4]_
+
+**Honoured for the first time by the scene format, and the division of labour is the part that was never written down.** Carrying both fields is easy; deciding what each one *does* is the decision, and the answer that works before a fixup tool exists is three rules:
+
+- **The path resolves the reference.** It is looked up in the project folder, and that is the whole of how a sprite is found. This is what keeps a scene greppable and what lets a session understand a level by reading it.
+- **The id is the witness.** Once the file is found, the id in its `.meta` is compared with the one the reference recorded. Disagreement means the reference points at a *different file* than the one it was written against — a texture swapped, a file restored from a backup — and it is said out loud.
+- **The id does not veto.** A mismatch is reported and the sprite is drawn anyway, because the file at that path *is* what the scene points at, and refusing to draw it would be less informative than drawing it and saying so.
+
+Without the third rule the id is a trap. Without the second it is dead weight — before this session nothing had ever read one, and an unread field is a field that is quietly wrong. There is also a cost to budget for: the id lives in the *texture's* `.meta`, so **setting** a reference is asynchronous (ask the service for the id, then write both halves in one transaction). Writing the path alone would be synchronous and would look identical on the day it was built. _[earned 2026-08-11]_
 
 ### D6: Every format is a Zod schema, and the schema file is the single source of truth
 
@@ -104,6 +129,14 @@ All mutations go through the kernel's transaction API. Undo is implemented once 
 4. **Patches are rooted at the document map, not at the whole store state.** The first path segment is then the document's own path, which is how the writer knows what to save — and it puts everything that is *not* undoable (what is believed to be on disk, what is in flight, what failed to save) structurally out of a patch's reach. What a recipe cannot see cannot be undone by accident.
 5. **A transaction that produced no patches records no undo step.** A control re-emitting the value it already holds is not a change, and an undo entry that reverses nothing is a step Ctrl-Z appears to skip — G2's symptom, arrived at from the opposite direction.
 6. **Coalescing merges inverse patches in reverse order.** The merged entry is `patches: [...old, ...new]` and `inversePatches: [...new, ...old]`, because undoing both means undoing the newer change first. The naive same-order version passes every test written against one field being replaced twice, and fails the first time a run touches more than one key — which a frame-size run does.
+
+**The bet paid, and here is the evidence rather than the argument.** A second format arrived in the store — scenes, holding a list of entities — and **not one line of undo, merging, coalescing, staleness or save logic was written for it**. `Document` became a union, one branch on `format` chose which service endpoint the write goes to, and everything else was already true. Three things learned collecting that:
+
+- **Adding and deleting are edits.** This is where a session reaches past the transaction API, because *creating* something feels categorically different from *editing* it. It is not: an add is a recipe that pushes onto a list, a delete is one that splices, a reorder is one that moves a slot, and Ctrl-Z covers all three for free. A tool that writes its own inverse for a create is a defect whether or not it works (G2).
+- **A recipe re-finds its target by id rather than closing over an index.** Between the click and the recipe running, a text editor may have changed the file underneath — and an index into a list that has moved on deletes the wrong thing. The cost is a `findIndex`; the failure mode is silent and destructive.
+- **What is selected after an edit is not part of the edit.** Selecting a newly added entity happens *outside* the transaction, or undo would restore a selection as well as a document, which is exactly what `editor-ui` U8 exists to prevent.
+
+_[earned 2026-08-11]_
 
 _[earned 2026-08-11]_
 
@@ -245,7 +278,15 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/tests/architecture/boundaries.test.ts` — D1 as a test rather than as a promise.
 - `kernel-2d/sidecar/meta-view-schema.ts` — what `GET /meta` answers with, including the two answers that are not a meta: there isn't one, and there is one this editor cannot read.
 - `kernel-2d/sidecar/meta-files.ts` — the whole of D17 in one file: create-when-missing, the startup sweep, the one write the editor can ask for, and the path validation everything from the browser passes through.
-- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`, and `PUT /meta?path=…` — the only non-GET this service answers at all.
+- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`, `GET /document?path=…`, `GET /asset?path=…`, and the two PUTs to `/meta` and `/document` — the only non-GETs this service answers at all.
+- `kernel-2d/sidecar/document-view-schema.ts` — the registry of document formats the editor reads and writes, keyed by the `format` the document itself carries (D22), and the answer `GET /document` gives about one.
+- `kernel-2d/sidecar/document-files.ts` — D22 in one file: the widened write, the guard that it never creates, and the guard that it only replaces a document with one of the format already there.
+- `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema`: the flat entity list, the transform, the open component map and the registry of components the kernel knows. Owned by `text-formats`.
+- `kernel-2d/runtime/scene/scene-view.ts` — the second renderer, and its report of which entities it drew and where.
+- `kernel-2d/runtime/scene/entity-layer.ts` — documents into drawn objects: matched by id, updated in place, depth from list order.
+- `kernel-2d/runtime/scene/coordinates.ts` — scene space (y-up, bottom-left) and how it becomes screen space. One definition, no Phaser.
+- `kernel-2d/editor/shell/scene-assets.tsx` — D5 as built: resolve by path, compare the id, report rather than veto.
+- `kernel-2d/editor/store/document-disk.ts` — the editor's write for documents, beside `meta-disk.ts`.
 - `kernel-2d/editor/store/documents.ts` — **the transaction API** (D7): the store, the two doors, the single time-ordered undo stack, the coalescing rule, the debounced save, and the convergence argument of G10 written where the handler is. Nothing else in the editor may change a document.
 - `kernel-2d/editor/store/open-documents.ts` — the one store per window, and the hooks panels read it through.
 - `kernel-2d/editor/store/meta-disk.ts` — the editor's whole write privilege, in one function.
@@ -256,8 +297,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 **Not yet written** — these are the kernel's core contracts and land as the corresponding sessions build them. Until a path appears here, the contract does not exist and must not be assumed:
 
-- `SceneSchema` — entity list, component maps, transforms, asset refs.
-- `PrefabSchema` — reusable entity templates.
-- A runtime scene loader. The runtime exists now, but only far enough to draw one texture with its import settings applied — there is no scene format for it to load and no entity layer beneath it.
+- `PrefabSchema` — reusable entity templates. The document endpoint is already shaped to take it: adding one is a schema plus a line in the registry.
+- A camera. The scene viewport draws 1:1 with the scene's origin at the bottom-left corner of the panel, so an entity placed outside that area is off screen and findable only in the Hierarchy. Panning, zooming and a scene-space-to-screen scale all belong in `runtime/scene/coordinates.ts` when they land, not in a second conversion somewhere else.
+- Parenting. The entity list is flat and ordered, which is the shape a `parent` field can be added to without a migration; nothing can set one yet, so nothing carries one.
+- A fixup tool for references whose files have moved. D5's id is read and compared today, and there is nothing that reconciles the pair.
 - Play mode. D2's second sentence is still unspent: nothing yet destroys an edit scene and boots the real loader.
-- Inspector controls generated from a Zod schema. The three texture settings are hand-written; generalising is worth doing once several inspectors exist to generalise *from*.
+- Inspector controls generated from a Zod schema. The texture settings and the entity fields are both hand-written; there are now two inspectors to generalise *from*, which is the point at which it becomes worth doing.

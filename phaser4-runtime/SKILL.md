@@ -17,6 +17,10 @@ The runtime skill for Phaser 4 — the specifics of building the game runtime on
 
 A single `Phaser.Game`, booted against a canvas the host supplies, with a small imperative API over it — show this, redraw it at that scale, resize, clear. Never one game per thing being previewed. **Reason:** three costs, of which only the first is obvious. Booting is slow enough to see. Each boot takes a fresh WebGL context and browsers cap how many exist at once (around sixteen in Chromium), after which the oldest are silently killed — so a long session starts losing contexts for reasons that look like anything but "we made too many". And a rebuild throws away everything the renderer had cached, which turns the operations that should be free (changing a filter, re-cutting frames) back into first loads. The API this forces is about fifty lines and is the good kind of constraint: it makes "what can change without a reload?" an explicit, reviewable list. _[earned 2026-08-11, Phaser 4.1.0]_
 
+**Amended when a second surface arrived: one game per *declared surface*, not one game per window.** The editor now has two — a scene viewport and a single-texture preview — and that is fine, because none of P2's three costs is about the number two. They are all about a count that grows with *use*: booting where the human can see it, contexts churning until the browser kills the oldest, and caches thrown away that should have been warm. The invariant that actually protects against those is **the renderer count is a number written in one file** (`editor-ui` U18, `panels.tsx`) rather than a number nobody can predict. Two panels, two games, each booted once and kept for the life of the window.
+
+Two things learned running two of them, both reassuring: nothing in Phaser is global between games — the same scene key, the same texture keys and separate `TextureManager`s coexist without a word — and the second game costs one more WebGL context and nothing else. The rule to keep is the *reviewability* one: if a session ever finds itself creating a game somewhere other than a provider that owns exactly one, that is the moment P2 is actually being broken, whatever the current count happens to be. _[earned 2026-08-11, Phaser 4.1.0]_
+
 ### P3: Import settings are applied to the live texture, never by reloading it
 
 `Texture.setFilter(mode)` changes filtering in place. Frames are replaced with `texture.remove(name)` for each existing frame and `texture.add(name, 0, x, y, w, h)` for each new one. Neither touches the network and neither re-uploads the image to the GPU — frames are rectangles held in JavaScript, so re-slicing is arithmetic. **Reason:** the difference is invisible on a 16px sprite and decides whether the tool is usable on a real one. Dragging a frame-size field on a 4096² tileset is a ~64MB upload per keystroke if the texture is re-registered, and free if it is not. `Texture.get('__BASE')` survives slicing and is still the whole image, which is what lets a preview draw the sheet and its frame boundaries at the same time. _[earned 2026-08-11, Phaser 4.1.0]_
@@ -67,6 +71,16 @@ The `Scene` class in the v4 types declares `update(time, delta)` but not `create
 
 Measured rather than assumed, because the opposite is widely believed: a default `chromium.launch()` reports `WebGL 2.0 (OpenGL ES 3.0 Chromium)` on an ANGLE/SwiftShader device with an 8192px maximum texture size. No launch flags, no `--use-gl=swiftshader`, no `--enable-unsafe-swiftshader`. **Fix/policy:** do not add GL launch arguments speculatively; probe first, in five lines, and add them only if the probe fails. The 8192 limit is the one number worth remembering — a test fixture larger than that would fail for a reason that looks nothing like its cause. _[earned 2026-08-11, Playwright 1.62.1]_
 
+### G7: After import settings are applied, frame `"0"` exists unless the grid produced nothing
+
+`applyImportSettings` removes every frame name and re-adds one per rectangle, and `framesFor` returns a single whole-image rectangle for `single` — so a texture that has been through it always has a frame called `"0"`, whatever its slice mode. The exception is a grid whose frame size does not fit the image at all, which produces no frames, and then only `__BASE` is left.
+
+**Fix/policy:** a sprite draws `texture.has('0') ? '0' : '__BASE'`. Do not reach for `__BASE` as the normal case — it is the whole sheet, so a four-frame run strip would draw as a wide smear rather than as a character, and it would look like a scaling bug. Do not assume `'0'` either: the fallback is the case where a human has typed a frame size larger than their image, which is ordinary while typing. _[earned 2026-08-11, Phaser 4.1.0]_
+
+### G8: `getBounds()` is correct the moment a game object is positioned, with no render tick in between
+
+Setting origin, position, rotation, scale and depth and then reading `getBounds()` in the same synchronous block gives the rectangle the object will actually occupy. **Fix/policy:** this is what lets a renderer *report* what it drew rather than have a panel recompute it from the same inputs (`editor-kernel` D2) — the report is available immediately, so there is no excuse for a second derivation. Divide by the device pixel ratio on the way out if the object was positioned in device pixels; the bounds come back in the same space the transform was set in, not in CSS pixels. _[earned 2026-08-11, Phaser 4.1.0]_
+
 ## Contracts
 
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
@@ -78,3 +92,6 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/runtime/preview/texture-view.ts` — P2 and G5 as built: booting one game against a supplied canvas, the image cache, and the report of what was actually drawn.
 - `kernel-2d/runtime/textures/import-settings.ts` — P3 and P4: settings applied to a live texture, and the filter read back off it.
 - `kernel-2d/runtime/textures/frames.ts` — the frame geometry of G2. The single definition of what a slice means, shared by the renderer and by anything drawing over it.
+- `kernel-2d/runtime/scene/scene-view.ts` — the second surface of P2 as amended: one game, told which scene and which textures, reporting what it drew.
+- `kernel-2d/runtime/scene/entity-layer.ts` — display objects kept in step with a list of entities by id, updated in place rather than rebuilt, and the `getBounds()` report of G8.
+- `kernel-2d/runtime/scene/coordinates.ts` — the y-up-to-y-down flip and the rotation sign, with no Phaser import, so both are testable without a browser.

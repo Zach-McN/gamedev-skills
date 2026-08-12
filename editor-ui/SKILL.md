@@ -45,6 +45,23 @@ When the change stream drops, the Assets panel keeps the tree on screen and says
 
 What is selected is held in a plain React context above the docking layout, not in the document store. **Reason:** pressing undo after clicking a different file must reverse the last thing that was *changed*, not the last thing that was *looked at* — and the way to guarantee that is for selection never to be in the thing undo replays. It is also never serialized and never appears in a saved file, which is the other half of the same observation. A context rather than a store because a single path needs nothing more; when the store arrives for real document state, selection stays out of it. _[earned 2026-08-11]_
 
+**Amended when an entity became selectable: selection is a union, and what is *open* is a second thing that is not selection at all.**
+
+```ts
+type Selected =
+  | { kind: 'none' }
+  | { kind: 'file';   path: string }
+  | { kind: 'entity'; scene: string; entity: string }
+```
+
+Two changes, each with its own reason.
+
+**A union rather than a path plus an entity id.** A pair can spell states that are not real — an entity id belonging to a scene that is not the selected file, an entity id while a texture is selected. Four combinations, three of them meaningful, and every reader has to decide for itself which to ignore; they will not all decide the same way. The union cannot write the impossible ones down, so no reader has to guard against them.
+
+**Which scene is open is separate state, sitting beside selection and equally never undoable.** With a level open, clicking a PNG means two things are being looked at and only one of them is selected. Folding "open" into selection would mean that click either closed the level or left a scene path in a field that also means "what is selected" — one field with two meanings. Keeping them apart is what makes "the Viewport still holds my scene while I look at a texture" fall out rather than be arranged.
+
+The rule that follows and is worth stating on its own: **nothing decides a file is a scene from its path.** Selecting a `.json` is what makes the editor *read* it; the `format` inside it is what makes it the open scene (U11). A `scenes/` folder is a convention in the folder map, not a fact the code may rely on. _[earned 2026-08-11]_
+
 ### U9: Anything with a live subscription is read once per window and shared, not per panel
 
 The Assets panel and the Inspector both need the project folder. The hook that fetches it and holds a change stream open is called once, in a provider above the layout, and both panels read from that. **Reason:** two callers means two streams, two fetches, and — the part that actually bites — two copies refreshed on separate timers, so one panel can be a beat behind its neighbour with nothing on screen saying so. Same reasoning as U5 one level up: the failure is not the wasted work, it is the two answers. **Providers go above the docking layout**, because dockview mounts and unmounts panel bodies as tabs move, and state held inside a panel is lost the first time the human drags it. _[earned 2026-08-11]_
@@ -58,6 +75,16 @@ The Assets panel and the Inspector both need the project folder. The hook that f
 The renderer's canvas is a plain DOM element made outside React and held by the provider. The panel renders an empty host and, in an effect, appends the canvas on mount and removes it on unmount. Sizing is a `ResizeObserver` on the host, reported up to the provider, which tells the renderer.
 
 **Reason:** this is what makes U9's third case work in practice. The canvas cannot be a React child, because moving it between parents on every tab drag would mean unmounting and remounting the element itself. Two details that are easy to get wrong: the game must be given `parent: null` or it appends its own canvas to the document body (`phaser4-runtime` G5); and everything the panel sends *down* (its size) should be separate from everything it sends *across* (what to draw), because a panel being dragged wider is not a reason to fetch anything again. _[earned 2026-08-11]_
+
+### U18: A second renderer is allowed; the count is bounded by the panel declaration, not by use
+
+The scene viewport and the texture preview are two live Phaser games in one window. That is a deviation from "one game for the life of the window" (`phaser4-runtime` P2) and it is recorded rather than absorbed, because the shape that keeps it honest is narrow: **one game per declared viewport-shaped panel** — booted once, kept for the life of the window, never created per selection, never destroyed when a tab is closed or dragged. The number of live renderers is then a number written in `panels.tsx`, which somebody has to edit on purpose, rather than a number that grows while the human works.
+
+Three practicalities that came with the second one:
+
+1. **Two panels sharing a dockview group means only one of them is rendering.** Putting the Texture tab in the Viewport's group is what makes "the texture opens in its own tab and the scene keeps its place" true, and it also means a hidden panel's body may not be mounted at all. Nothing in a panel may be the only copy of anything (which U9 already required) and no test may assert against a tab that is not in front.
+2. **A hidden panel measures 0×0, and reporting that is worse than reporting nothing.** The `ResizeObserver` in the canvas host must ignore a zero box. For a texture that would fit a picture to nothing and then fit it again; for a scene drawn from the bottom edge upward it puts every sprite on a floor line one pixel from the top, and the first real measurement then moves everything — a visible jump for no reason.
+3. **Bringing a tab forward belongs to the shell, not to the panel.** A panel behind another tab is not rendering and cannot ask to be looked at, so the effect that says "a texture was selected, show the Texture tab" lives above the layout with a handle on the dockview API. Do both directions or neither: selecting a scene has to bring the Viewport *back*, or half the time the human clicks something and nothing appears to happen. _[earned 2026-08-11, dockview 8.0.0]_
 
 ### U16: What a panel draws over a canvas is DOM, and its numbers come from the renderer
 
@@ -127,19 +154,29 @@ Dockview tabs render a close affordance by default, and the shell has no panel m
 
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
 
-- `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank.
+- `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now.
 - `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, and the worked example of a panel with a body.
 - `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store.
 - `kernel-2d/editor/panels/TextureSettings.tsx` — the first editable controls, hand-written, and the worked example of U14. Every one of them goes through the transaction API and none of them knows undo exists.
 - `kernel-2d/editor/shell/useUndoShortcuts.ts` — U13, and the only keyboard handler in the editor.
-- `kernel-2d/editor/panels/ViewportPanel.tsx` — U15 and the worked example of U10 generalised: the canvas's host, and every sentence that stands in for a picture.
-- `kernel-2d/editor/panels/ViewportOverlay.tsx` — U16. Frame guides, the strip no frame reaches, the pivot marker, and the caption that says in words what the shading says in pixels.
-- `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: one renderer per window, above the layout, and the zoom state of U17.
+- `kernel-2d/editor/panels/ViewportPanel.tsx` — the scene, and the worked example of U10 at its widest: no scene open, opening, gone, unreadable, empty, and a texture it cannot draw are six different sentences.
+- `kernel-2d/editor/panels/TexturePanel.tsx` — U15 and the single-texture preview, moved out of the Viewport when the Viewport became the scene.
+- `kernel-2d/editor/panels/TextureOverlay.tsx` — U16. Frame guides, the strip no frame reaches, the pivot marker, and the caption that says in words what the shading says in pixels.
+- `kernel-2d/editor/panels/SceneOverlay.tsx` — U16 again: the selected entity's outline, the crosshair on its position, and the corner the scene's y counts up from.
+- `kernel-2d/editor/panels/HierarchyPanel.tsx` — what is in the open scene, in draw order, and the four actions that change it — every one a transaction and none of them aware undo exists.
+- `kernel-2d/editor/panels/EntityInspector.tsx` — the second inspector, and where a D5 reference is written.
+- `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
+- `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
+- `kernel-2d/editor/shell/scene-view-context.tsx` — U18: the scene renderer, and why two is a bounded number rather than a habit.
+- `kernel-2d/editor/shell/open-scene.tsx` — which scene is open and the document behind it; one fetch that both decides a `.json` is a scene and puts it in the store.
+- `kernel-2d/editor/shell/scene-assets.tsx` — U9 for a set whose membership changes: every texture a scene refers to, resolved once per window.
+- `kernel-2d/editor/shell/layout-context.tsx` — the handle on the docking layout, and the only thing that reaches it from outside a panel.
+- `kernel-2d/editor/shell/useSelectionFocus.ts` — U18's third practicality: which tab comes forward for what was just clicked.
 - `kernel-2d/editor/shell/asset-meta-context.tsx` — U9's second case, and why a fetch with a side effect is never a panel's to own.
 - `kernel-2d/editor/shell/zoom.ts` — the scale ladder of U17.
 - `kernel-2d/editor/shell/asset-kinds.ts` — what a file is (U11) and how to find it in the tree. Shared the moment a second panel needed the same answer.
 - `kernel-2d/editor/shell/asset-rows.ts` — which rows a folder has, and why a sidecar folds into the row of the file it annotates (`editor-kernel` D4). Shared because the Inspector counts a folder the same way the panel lists it.
-- `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, and nothing else.
+- `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, which scene is open, and nothing else.
 - `kernel-2d/editor/shell/project-context.tsx` — U9. One folder read and one change stream per window.
 - `kernel-2d/editor/shell/useAssetMeta.ts` — one file's import settings, re-asked when the folder changes as well as when the selection does.
 - `kernel-2d/editor/shell/useProjectTree.ts` — the folder, kept current: the re-read of U5, the settle of U6, and the stale state of U7.
@@ -155,9 +192,12 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 **Not yet written** — until a path appears here, the contract does not exist and must not be assumed:
 
-- Inspector auto-generation from Zod schemas. The three texture controls are hand-written on purpose: the useful generic version is written once several inspectors exist to generalise from.
-- The Hierarchy panel. Still a placeholder; it lands with the scene format.
-- Anything editable in the viewport — gizmos, dragging a pivot, dragging the frame grid. The Inspector's controls are the only way to change these values, deliberately.
+- Inspector auto-generation from Zod schemas. There are two hand-written inspectors now, which is the point at which generalising has something to generalise *from*.
+- Anything editable in a viewport — gizmos, dragging a sprite, click-to-select in the picture, a marquee, dragging a pivot or a frame grid. The Hierarchy and the Inspector are the only ways to change any of it, deliberately.
+- Dragging inside the Hierarchy tree, and nesting. The list is flat and reordering is two buttons.
+- Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it.
+- A camera in the scene viewport. It draws 1:1 from the bottom-left corner, so an entity placed outside the panel is off screen and findable only in the Hierarchy.
+- Two scenes open at once. `openScene` is one path.
 - The panel menu and saved layouts (UG4).
 - A keyboard shortcut registry. There is exactly one handler (U13), and one does not need a registry.
 - Anything that shows the undo stack — a history panel, an Edit menu, an "Undo <label>" caption. The labels exist and `peekUndo`/`peekRedo` expose them; nothing reads them yet.
