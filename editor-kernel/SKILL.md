@@ -37,13 +37,17 @@ The binary lands wherever the human put it from Photoshop or Blender. A JSON sid
 
 **Amended, once that feature existed: sidecars fold into the row of the file they annotate.** `knight.png` is one row carrying a marker rather than two rows; selecting it shows the settings in the inspector. This is the presentation job the note above anticipated, not the hiding it forbids — every file on disk is still represented, and the folder counts the inspector shows are computed from the same rule that lists the rows, so the number and the tree can never be two different answers. **A `.meta` with no file beside it keeps its own row, marked**, which is the same rule rather than an exception to it: with nothing to attach to, the only honest place to show it is on its own, and a stranded sidecar is exactly the thing a human needs to be able to find. Put the folding rule in one shared module the moment a second panel needs it; two copies disagree the first time either changes. _[earned 2026-08-11]_
 
-### D17: The sidecar creates a `.meta` that is missing and deletes a stranded one at startup — nothing else, ever
+### D17: The sidecar creates a `.meta` that is missing, deletes a stranded one at startup, and replaces one the editor names — nothing else, ever
 
-Stated in full, because this is the first and so far only write the service makes into a human's project folder:
+Stated in full, because this is the whole of what the service may write into a human's project folder:
 
-- **Creates** a `.meta` when a file with a recognised asset extension has none — at startup, when a file is added, and when a sidecar is deleted while its file is still there.
-- **Deletes** a `.meta` at startup, and only at startup, when no file sits beside it.
-- **Never modifies** one that exists, including one it cannot parse.
+- **Of its own accord**, creates a `.meta` when a file with a recognised asset extension has none — at startup, when a file is added, and when a sidecar is deleted while its file is still there — and deletes a stranded one at startup, only at startup.
+- **Replaces** the entire contents of one `.meta`, and only when the editor names that file and supplies a complete, valid document.
+- **Never modifies anything else**, and never changes a `.meta` on its own initiative, including one it cannot parse.
+
+**The middle line arrived later than the other two, and the third is what stops it meaning more than it says.** The editor gaining the ability to write a file is not the service gaining the ability to write files: nothing in the service decides on its own that a `.meta` should be different from how it found it. Every widening of this list has to be phrased so that it still fits in three lines — if it does not, the privilege has grown past what anyone can hold in their head, which is the point at which it starts damaging work nobody authored.
+
+Three refusals belong to the write, each leaving the file byte-for-byte as it was: a path that is not inside the project, a document that is not a valid `.meta`, and a sidecar with no file beside it (writing that one strands it, and a stranded sidecar is deleted at the next startup — so the change would quietly not survive the day). What it deliberately does *not* refuse is a document whose type disagrees with the file's extension: what a file says it is beats what its name suggests (`editor-ui` U11), so that is an authoring decision rather than a mistake to correct.
 
 **Reason:** the write privilege has to be small enough to state in three lines, because every widening of it is a way for the editor to damage work it did not author, and the damage is discovered later by a human who has no reason to suspect the tool. Three specifics that carry their own reasons:
 
@@ -62,6 +66,25 @@ The runtime validates on load, the editor validates on save, and both read the s
 ### D7: Undo is document-level, via immer patches through a transaction API — never per-tool
 
 All mutations go through the kernel's transaction API. Undo is implemented once as patches over the in-memory document, not as per-tool inverse commands. **Reason:** per-tool undo is the #1 source of editor jank, because every new tool is a fresh chance to write an inverse operation that is subtly wrong, and the bug surfaces three actions later where nobody is looking. Document-level undo means every future genre tool inherits correct undo for free, having written no undo code at all. This decision is load-bearing enough that a session bypassing the transaction API is a defect regardless of whether its feature works. _[seeded 2026-08-11, report §5/§13]_
+
+**Confirmed in build, with the shape it actually took.** `kernel-2d/editor/store/documents.ts`, built on zustand 5 + immer 11. Six things settled by writing it, each of which a fresh session would otherwise re-derive the hard way:
+
+1. **The store is created inside the module and never leaves it.** What is exported is the transaction API plus a read-only view — `getState`/`getInitialState`/`subscribe`, deliberately not `setState`. Together with immer's auto-freeze, a panel that assigns to a document throws at the point of the assignment. That is what makes G2 structural rather than advisory: the failure is loud, immediate, and in the tool that caused it, instead of silent and three actions downstream.
+2. **There are exactly two doors, and the second one is not an edit.** `edit`/`editDocument` records undo; `adoptFromDisk` does not, because the file changing underneath the editor is a reload rather than something the human did — offering to undo somebody's text-editor save is incoherent. Two is the right number; if a third ever appears, check whether it is really a reload in disguise.
+3. **One stack for the whole project, ordered by time.** Per-file stacks make Ctrl-Z mean something different depending on what is selected, which is the jank the API exists to prevent.
+4. **Patches are rooted at the document map, not at the whole store state.** The first path segment is then the document's own path, which is how the writer knows what to save — and it puts everything that is *not* undoable (what is believed to be on disk, what is in flight, what failed to save) structurally out of a patch's reach. What a recipe cannot see cannot be undone by accident.
+5. **A transaction that produced no patches records no undo step.** A control re-emitting the value it already holds is not a change, and an undo entry that reverses nothing is a step Ctrl-Z appears to skip — G2's symptom, arrived at from the opposite direction.
+6. **Coalescing merges inverse patches in reverse order.** The merged entry is `patches: [...old, ...new]` and `inversePatches: [...new, ...old]`, because undoing both means undoing the newer change first. The naive same-order version passes every test written against one field being replaced twice, and fails the first time a run touches more than one key — which a frame-size run does.
+
+_[earned 2026-08-11]_
+
+### D18: Autosave, debounced, with no dirty state and no save button
+
+Every change is written to its file after a short quiet period; there is no save action and nothing models a document as modified-but-unsaved. **Reason:** the folder is the database (D3) and there is no open-document concept to hang a save on — a save button would imply a dirty state that nothing else in the kernel represents, and the human would have to learn a rule the architecture does not actually have. The debounce is 200ms and is spent out of the human's one-second budget (`editor-ui` U6). Two consequences worth knowing before relying on it: a write that is refused is **not** retried on a timer (a service that refused once will refuse again, and a silent retry loop is an editor hammering a service nobody has told anything is wrong) — it is recorded against that file and tried again on the next edit; and while a file has a change the folder has never accepted, re-reads of it are ignored, because taking one would discard the human's work *and* the only sign on screen that anything went wrong. _[earned 2026-08-11]_
+
+### D19: When the file and the editor disagree, disk wins — and it is said out loud
+
+A `.meta` changed in a text editor replaces what the editor is holding, rather than the editor refusing to write and reporting a conflict. **Reason:** the alternative is the editor arguing with Notepad, and it loses — the folder is the database, and a tool that refuses to proceed because a file changed underneath it is a tool that has to be argued with before it will do its job. The two residuals are accepted knowingly rather than discovered: a text-editor save landing inside the editor's ~200ms write window loses, and an undo of a field that a text editor has since changed puts that field back to what it was, because patches are per-field and undo means "put this back". _[earned 2026-08-11]_
 
 ### D8: A Node sidecar owns the filesystem; the editor is a local web app
 
@@ -149,6 +172,16 @@ A rename arrives as an unlink of the old name plus an add of the new one. Any co
 
 Creating a `.meta` in response to a file appearing produces a change event for the `.meta`, which is another file appearing. **Fix/policy:** the loop is broken by the *rule*, not by a flag — a `.meta` is not an asset, so the second pass through does nothing, and the sidecar never gives a `.meta` a `.meta`. Two things make this reliable rather than lucky. Write the termination argument into the code as a comment where the handler is, because a later session widening "what counts as an asset" needs to see what it would break. And **run the bulk sweep before the watcher starts**, not after: a few hundred sidecars created with the watcher already listening is a few hundred change events describing the service's own work, which the editor then treats as the human having done something. A test asserts the folder listing is unchanged after the dust settles, which is the only form of "it does not loop" that is actually checkable. _[earned 2026-08-11]_
 
+### G10: The editor writing a file feeds itself, and it converges for a reason worth writing down — but only after a race is closed
+
+The editor writes a `.meta`, the watcher reports the change, the folder is re-read, the settings are re-fetched, and the answer arrives back at the editor. Same shape as G9, one layer up, and it terminates for a completely different reason.
+
+**Why it converges: the round trip is identity.** What comes back is exactly the document that went out, so taking it changes nothing, so nothing schedules a second write. The cycle has a fixed point and the very first iteration is already sitting on it. What guarantees the identity is the round-trip property the format is already tested for — `load(save(x))` equals `x` (G1, `editor-verification` V7). **That test is therefore doing double duty**, and a session that breaks it does not only break the format: it turns this into a loop that rewrites the same file for ever. Say so in a comment where the handler is, because nothing else connects the two.
+
+**The race that converging does not close.** A read *issued* before the write can be *answered* after it, and it then carries the file's contents from before the write. Nothing about that answer looks stale — it is an ordinary reply to an ordinary question — so taking it reverts the change and then writes the reversion back to disk. On screen the setting simply does not stick, and nothing anywhere reports an error. **Fix/policy:** the guard has to be on when the read *started*, not on when it arrived; by arrival the write is long finished and a stale answer is indistinguishable from a fresh one. In practice: hand out a token before asking, hand it back with the answer, and discard any answer whose token predates the last write to that path. Discarding costs nothing, because the write's own watcher event triggers a read that is unambiguously newer.
+
+Two more guards belong beside it, for the same reason and with different timing: ignore a re-read while a write for that file is queued or in flight (it is the file as it was before the keystroke), and ignore one while a write for that file has been refused (the editor is holding a change the folder never accepted). _[earned 2026-08-11]_
+
 ### G8: Path separators leak the authoring machine into the data
 
 Windows produces `assets\textures\knight.png`, macOS produces `assets/textures/knight.png`, and the same project then serializes two different ways depending on who saved last. **Fix/policy:** one conversion helper at the boundary, forward slashes in every path that reaches JSON, a terminal, or a test, and an explicit assertion in the test suite that no emitted path contains a backslash. This has to be settled in the first format, because every later format inherits the convention. _[earned 2026-08-11]_
@@ -172,8 +205,11 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/feed.ts` — the hand-off from the watcher to everything listening: the terminal, and every open editor window.
 - `kernel-2d/sidecar/meta-schema.ts` — `MetaSchema`: the `.meta` sidecar format, the extension→type vocabulary, and the defaults factory both writers build from. Owned by `text-formats`.
 - `kernel-2d/sidecar/meta-view-schema.ts` — what `GET /meta` answers with, including the two answers that are not a meta: there isn't one, and there is one this editor cannot read.
-- `kernel-2d/sidecar/meta-files.ts` — the whole of D17 in one file: create-when-missing, the startup sweep, and the path validation everything from the browser passes through.
-- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`.
+- `kernel-2d/sidecar/meta-files.ts` — the whole of D17 in one file: create-when-missing, the startup sweep, the one write the editor can ask for, and the path validation everything from the browser passes through.
+- `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`, and `PUT /meta?path=…` — the only non-GET this service answers at all.
+- `kernel-2d/editor/store/documents.ts` — **the transaction API** (D7): the store, the two doors, the single time-ordered undo stack, the coalescing rule, the debounced save, and the convergence argument of G10 written where the handler is. Nothing else in the editor may change a document.
+- `kernel-2d/editor/store/open-documents.ts` — the one store per window, and the hooks panels read it through.
+- `kernel-2d/editor/store/meta-disk.ts` — the editor's whole write privilege, in one function.
 - `kernel-2d/sidecar/start.ts` — bringing the sidecar up as a library rather than as a command, which is what lets the editor launcher host it in-process (D9).
 - `kernel-2d/sidecar/ignore.ts` — what the sidecar never lists and never watches.
 - `kernel-2d/scripts/editor.ts` — the one command (D9).
@@ -183,5 +219,5 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 - `SceneSchema` — entity list, component maps, transforms, asset refs.
 - `PrefabSchema` — reusable entity templates.
-- The transaction API surface — the single entry point for all document mutation (D7).
-- The sidecar's write API for documents the *editor* changes (JSON read/write, static asset serving). The only write that exists is D17's, which the editor cannot trigger and which touches nothing but a missing or stranded `.meta`.
+- Static asset serving. The write side of the sidecar exists now, but only for a `.meta` (D17); no other document format has one because no other document format exists.
+- Inspector controls generated from a Zod schema. The three texture settings are hand-written; generalising is worth doing once several inspectors exist to generalise *from*.

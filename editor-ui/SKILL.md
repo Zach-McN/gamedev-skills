@@ -27,6 +27,8 @@ A status strip carries the project's short name, its full resolved path, and a l
 
 `tsconfig.json` covers `sidecar/`, `scripts/`, `tests/` and the build configs (NodeNext, explicit `.js` extensions on relative imports); `tsconfig.editor.json` covers `editor/` (bundler resolution, DOM lib, `react-jsx`, extensionless relative imports); both extend one `tsconfig.base.json` holding the strict flags. `npm run typecheck` runs both. **Reason:** no single config serves both — NodeNext demands the `.js` extension that bundler-resolution code should not carry, and the DOM lib has no business in the sidecar. Files shared across the boundary (schemas) are imported with each side's own convention. _[earned 2026-08-11]_
 
+**Amended: a unit test of browser-side code belongs to the browser project, and cannot live in the browser *suite's* folder.** Vitest tests for editor modules go in `tests/store/`, added to `tsconfig.editor.json` and excluded from `tsconfig.json`. Two separate constraints force this and neither is obvious: the Node project's NodeNext resolution cannot follow the editor's extensionless relative imports, so the test has to be type-checked with the editor's config; and Playwright's default match claims `*.test.ts` as well as `*.spec.ts`, so a Vitest file placed in `tests/editor/` is picked up by the browser runner and fails in a way that looks nothing like the cause. _[earned 2026-08-11]_
+
 ### U5: A panel that changes re-reads the whole thing rather than patching its copy
 
 When the sidecar reports a change, the Assets panel fetches the entire folder again instead of applying the change to the tree it already holds. **Reason:** patching means a second piece of code that decides what the folder contains, and the two eventually disagree in a way nothing reports — the same failure as serialization drift, one layer up. A full re-read is one reader, always right by construction, and a scan of a game project is cheap next to the second the human is willing to wait. Revisit only when a project is big enough that the read is measurably late, and then measure rather than assume. _[earned 2026-08-11]_
@@ -55,6 +57,24 @@ Every state gets prose: a folder, a document whose format has no inspector yet, 
 
 The inspector shows the type from the `.meta` when there is one and falls back to the extension only when there is not. **Reason:** the sidecar is authored and the extension is a guess, so preferring the guess would make a deliberate override invisible. The same ordering applies anywhere else a document and a filename both claim to describe the same thing. _[earned 2026-08-11]_
 
+### U12: A control is built over the document in the store, never over the answer that was served
+
+The Inspector shows a texture's settings from the document store. The fetched `MetaView` is still what decides the states that have nothing to edit — no settings file, one that will not parse — but where the document itself is absent the panel says it is reading rather than rendering a control.
+
+**Reason:** the transaction API can only change a document the store is holding, so a control built over the served answer looks entirely correct and does nothing when used. That is the worst failure available in a panel: no error, no exception, and nothing visually different from a working control. It reads as "the setting doesn't stick", which sends the next session looking at the file writer, which is fine. Rendering the control only when the document exists makes the failure unreachable rather than merely unlikely — the same instinct as `editor-kernel` G2, applied one layer out. _[earned 2026-08-11]_
+
+### U13: Undo is a window-level shortcut, and it takes Ctrl-Z away from text fields
+
+`keydown` on the window; Ctrl/Cmd-Z undoes, Ctrl-Y and Shift-Ctrl-Z redo, `preventDefault` unconditionally — including with the cursor in a text input.
+
+**Reason:** there is one undo stack for the whole project (`editor-kernel` D7), so the key has to mean the same thing wherever the cursor happens to be. Leaving the browser's own field-level undo in place would make Ctrl-Z step back through the individual keystrokes of a value the document only ever saw as one change, so the same key would do two different things depending on where you were pointing. Every editor of this kind makes the same trade. Worth stating plainly because it is not a nicety: "one press of Ctrl-Z, not one per digit" is only satisfiable this way. _[earned 2026-08-11]_
+
+### U14: A number field holds its own text while it is being edited, and yields to any value that arrives from elsewhere
+
+It renders what has been typed while that text is in play, and the document's value otherwise. Text that is not a number yet is held and not committed; anything that is, is committed on the keystroke. Leaving the field drops any leftover text and seals the undo step.
+
+**Reason:** a number input fed straight from the document cannot be emptied to type a new value — clearing it parses as nothing, the document keeps the old number, and it reappears under the cursor mid-edit. But the field must still lose to the document when a value arrives from somewhere else, or undo and a text-editor save both appear to do nothing while the field has focus. Committing per keystroke rather than on blur is what keeps "on disk within a second" true during a long edit; the undo step stays single because of the merge key, not because the commit was held back. _[earned 2026-08-11]_
+
 ## Gotchas
 
 ### UG1: Dockview's layout is computed inside `requestAnimationFrame`, so a non-compositing surface freezes it at 100×100
@@ -69,6 +89,12 @@ Dockview sizes itself from a `ResizeObserver` whose callback is deferred through
 
 The dev server's default host resolves to `::1`, so anything looking for the editor at `127.0.0.1` — a test harness, a health check, a script — times out against a server that is demonstrably running and printing its URL. **Fix/policy:** set `server.host` to `127.0.0.1` explicitly, the same literal the sidecar binds to. Spell it as an address, never as `localhost`, anywhere the two halves have to find each other. _[earned 2026-08-11, Vite 8.2.1]_
 
+### UG5: A hook whose state is cleared by an effect answers for the *previous* selection for one render
+
+`useAssetMeta` cleared its state in the effect that re-fetches, and effects run after the render that changed the selection — so for exactly one render it answered with the file selected a moment ago. One render is long enough to matter twice over: the panel shows one file's settings under another file's name, and anything clicked in that render belongs to neither. It is also the render a browser test can land in, so the bug hides behind a green suite (see `editor-verification` W7).
+
+**Fix/policy:** hold the answer *and* the thing it is an answer about, and compare them at render time — `answer.forPath !== path` means loading, whatever the effect has or has not done yet. Never rely on an effect to invalidate state that a render can already tell is stale. Worth checking on sight in any hook of the shape "fetch when this prop changes": if the only thing clearing the old value is inside `useEffect`, the stale render exists. _[earned 2026-08-11, React 19.2.8]_
+
 ### UG4: Panels have close buttons and the kernel has nowhere to reopen them from
 
 Dockview tabs render a close affordance by default, and the shell has no panel menu and no layout persistence, so a closed panel is gone until the page is reloaded. Reloading restores the default layout, which makes this shallow rather than dangerous — but it is a real dead end for a human who does not know that. **Fix/policy:** it is fixed by the feature that adds a panel menu plus saved layouts, not by hiding the button; hiding a control while its keyboard and context-menu paths still work is worse than leaving it visible. Until then, say so in the hand-off. _[earned 2026-08-11]_
@@ -79,7 +105,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank.
 - `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, and the worked example of a panel with a body.
-- `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10 and U11: every state it can be in has a sentence.
+- `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store.
+- `kernel-2d/editor/panels/TextureSettings.tsx` — the first editable controls, hand-written, and the worked example of U14. Every one of them goes through the transaction API and none of them knows undo exists.
+- `kernel-2d/editor/shell/useUndoShortcuts.ts` — U13, and the only keyboard handler in the editor.
 - `kernel-2d/editor/shell/asset-rows.ts` — which rows a folder has, and why a sidecar folds into the row of the file it annotates (`editor-kernel` D4). Shared because the Inspector counts a folder the same way the panel lists it.
 - `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, and nothing else.
 - `kernel-2d/editor/shell/project-context.tsx` — U9. One folder read and one change stream per window.
@@ -93,9 +121,11 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/scripts/editor-server.ts` — the editor window's host, port, and open-a-browser knobs, with their environment variable names.
 - `kernel-2d/tsconfig.editor.json` and `kernel-2d/tsconfig.base.json` — the browser half of U4.
 
+- `kernel-2d/editor/store/open-documents.ts` — the one document store per window and the hooks panels read it through. The API itself is `editor-kernel`'s (D7); this is where the UI meets it.
+
 **Not yet written** — until a path appears here, the contract does not exist and must not be assumed:
 
-- The Zustand/immer store and the transaction API it fronts. No document state exists yet, so neither dependency has been added. Selection is not it and never becomes it (U8).
-- Inspector auto-generation from Zod schemas. The Inspector's fields are hand-written and read-only; every editable control is still to come.
+- Inspector auto-generation from Zod schemas. The three texture controls are hand-written on purpose: the useful generic version is written once several inspectors exist to generalise from.
 - The panel menu and saved layouts (UG4).
-- Any keyboard shortcut registry.
+- A keyboard shortcut registry. There is exactly one handler (U13), and one does not need a registry.
+- Anything that shows the undo stack — a history panel, an Edit menu, an "Undo <label>" caption. The labels exist and `peekUndo`/`peekRedo` expose them; nothing reads them yet.

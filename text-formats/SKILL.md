@@ -43,6 +43,14 @@ The convention (16 lowercase hex characters) lives in the function that mints th
 
 `GET /meta` does not return an `AssetMeta`. It returns a small envelope carrying the path asked about, a status, the meta when there is one, and — when there is a file that will not parse — the reason and the file's raw text. **Reason:** the two answers that are not a document (there isn't one; there is one and this editor cannot read it) are the answers a panel most needs to say something useful about, and they have nowhere to live in the document's own schema. Bolting them on by making every field optional would destroy the document schema as a contract. Keep the envelope thin: anything the consumer can derive from the shared vocabulary it already imports (what type an extension is, say) does not belong in it. _[earned 2026-08-11]_
 
+### T9: A format the editor rewrites is built from loose objects, so the document it holds *is* the document from disk
+
+Every object in `AssetMetaSchema` is `z.looseObject`, at every level, so keys the schema does not model survive the parse.
+
+**Reason:** the editor rewrites a `.meta` from the object it parsed, so anything the parse drops is quietly deleted out of a file a human wrote — and the round-trip test does not catch it, because that test only ever compares fields the schema knows about (F1). The obvious alternative is a merge step that puts unmodelled keys back at write time, and it fails for three reasons stacked on top of each other: it has to be remembered, it has to be right at every nesting depth, and it has to know which subtrees are *replaced* wholesale rather than merged (a discriminated union whose shape changed — flipping a slice from `grid` to `single` must not leave `frameWidth` behind as debris). Loose objects have none of those failure modes, because nothing is ever put back: it never left. The costs are a word per object and an inferred type that gains no index signature; both are nothing.
+
+The rule generalises. **A format the editor reads and later rewrites is loose. A format the editor only ever produces — a served answer, a computed view — stays strict**, because there is no human authorship in it to protect and strictness there catches a producer emitting a field nobody declared. `MetaViewSchema` is strict for exactly that reason while the document it carries is not. _[earned 2026-08-11, Zod 4.4.3]_
+
 ## Gotchas
 
 ### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
@@ -52,6 +60,8 @@ Zod infers an optional field as `T | undefined`, and with `exactOptionalProperty
 ### F1: A round-trip test proves the schema and the writer agree about what is kept, not that nothing was dropped
 
 Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify(x)))` will happily return a document with a writer's extra field removed, and the test still passes if the comparison is made against the stripped value. **Fix/policy:** compare the round-tripped result against the **original** object, not against a re-parse of itself — that is the comparison that fails when a writer emits a field the schema does not know about. _[earned 2026-08-11, Zod 4.4.3]_
+
+**Sharpened once the editor started writing files.** The comparison above is necessary and not sufficient: it proves the schema and the writer agree, and says nothing about what happens to a key *a human* added that no writer knows about. For any format the editor rewrites, the test that matters is the one that hand-edits a parsed document with a key the schema has never heard of — at the top level *and* nested inside — and asserts it is still there after a write, a read and a write. That test is what fails the day somebody makes a loose schema strict again for tidiness (T9). _[earned 2026-08-11]_
 
 ## Contracts
 

@@ -63,7 +63,25 @@ A test that asserts a file was left alone reads its contents and its `mtime` bef
 
 Deleting stranded sidecars at startup is asserted twice: that a start clears one, and that a running session does *not*. **Reason:** a rule of the form "only ever at X" is two claims, and the second one is the one a later session breaks by accident while making the first one more helpful. Written next to each other, the pair reads as the rule; written apart, the negative half looks like an oddity somebody can delete. Same shape as V6's anchoring, applied to a policy rather than an event. _[earned 2026-08-11]_
 
+### V14: A browser test that changes the shared project puts every file back afterwards
+
+Tests that edit settings snapshot every `.meta` in the sample folder before each test and restore anything that differs after it, deleting anything that appeared. **Reason:** V10's shared project is built once per run, and the suite runs single-worker in file order — so a test that leaves a changed file behind makes a *later* test's outcome depend on which files happen to run first. That is the worst kind of flake, because it gets diagnosed as a product bug in whichever test drew the short straw. Snapshotting the whole set rather than the files a test names is deliberate: a test that writes somewhere unexpected is exactly the one that would forget to declare it. _[earned 2026-08-11]_
+
+### V15: A Vitest test of browser-side code lives outside the Playwright folder
+
+`tests/store/`, not `tests/editor/`. **Reason:** Playwright's default match claims `*.test.ts` as well as `*.spec.ts`, so a Vitest file in the browser suite's folder is run by the browser runner. The type-checking half of the same constraint is in `editor-ui` U4. Both are invisible until they bite, and both bite in a way that points somewhere else. _[earned 2026-08-11]_
+
+### V16: An injected clock and an injected writer are what make a store testable without waiting
+
+The document store takes `now`, `saveDebounceMs` and `writeToDisk` as options; the app supplies the real ones, tests supply a clock they move by hand, a zero debounce, and a writer that records what it was asked to write and can be made to fail. **Reason:** the interesting properties are all about ordering — what merges into one undo step, what is written and in what order, what happens to a change while its write is in the air — and every one of them is either untestable or slow if the only way to cross a 600ms window is to wait 600ms. A store that has to be tested through the UI is a store whose ordering rules are not really tested at all. _[earned 2026-08-11]_
+
 ## Gotchas
+
+### W7: A test can be green *because* of the bug, and fixing the bug is what reveals it
+
+An Inspector test asserted that selecting a README says "the editor does not import this kind of file". It passed for months of nothing and failed the moment a one-render staleness bug was fixed (`editor-ui` UG5) — because what it had actually been catching was the render in which the *previously selected folder's* answer was shown under the README's name. The sentence it asserted was real; it just belonged to a different file. The file it was pointed at has a `.meta` and says something else entirely.
+
+**Fix/policy:** when a test fails immediately after a fix that "should not have touched it", check whether the fix removed the thing the test was really observing before assuming the fix is wrong. The tell is a test that passes while asserting a state the code under test cannot actually be in for the input given — worth spending five minutes confirming the state is reachable at all. The repair is usually two tests: one for what the file actually does, and one that constructs the input the original sentence really describes. _[earned 2026-08-11]_
 
 ### W5: `waitFor` takes a synchronous probe, and an `async` one silently makes the wait a no-op
 
@@ -99,7 +117,11 @@ Anything sized through `requestAnimationFrame` — dockview's whole grid, among 
 - `kernel-2d/playwright.config.ts` — the browser harness: how the editor is started, on which ports, against which throwaway project (V8).
 - `kernel-2d/tests/editor/shell.spec.ts` — the browser suite as it stands, and the worked examples of V9, W3, and the screenshot habit below.
 - `kernel-2d/tests/editor/assets.spec.ts` — V11, and the panel's behaviour against the real sample folder.
-- `kernel-2d/tests/editor/inspector.spec.ts` — every state a panel can be in, asserted as the sentence the human reads, plus the tree-navigation helper of W6.
+- `kernel-2d/tests/editor/inspector.spec.ts` — every state a panel can be in, asserted as the sentence the human reads.
+- `kernel-2d/tests/editor/select-asset.ts` — the tree-navigation helper of W6, shared by every spec that needs something selected.
+- `kernel-2d/tests/editor/import-settings.spec.ts` — the acceptance criteria for editing, transcribed in the human's units (V1), plus the snapshot-and-restore of V14.
+- `kernel-2d/tests/store/documents.test.ts` — the transaction API on its own (V15, V16): one stack across two files, what merges into one undo step, and every way a re-read can be stale.
+- `kernel-2d/tests/sidecar/meta-write.test.ts` — the service's editor-driven write held to its edges, with every refusal checked against bytes *and* timestamp (V12).
 - `kernel-2d/tests/sidecar/meta-schema.test.ts` — V7 for the `.meta` format, and the rejections that make it a contract.
 - `kernel-2d/tests/sidecar/meta-files.test.ts` — V12: the sidecar's write privilege held to exactly its three lines, against a real filesystem.
 - `kernel-2d/tests/sidecar/meta-generation.test.ts` — the same rules through the running service (V13), including the "within a second" budget and the assertion that the folder settles rather than feeding itself.
