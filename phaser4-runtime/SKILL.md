@@ -9,7 +9,21 @@ The runtime skill for Phaser 4 — the specifics of building the game runtime on
 
 ## Decisions
 
-_None recorded yet. Filled via dual-write as the kernel is built._
+### P1: Pin Phaser to the version the vendored docs came from, exactly
+
+`"phaser": "4.1.0"`, no caret, matching `vendor/phaser4/PROVENANCE.md`. **Reason:** this skill names the vendored files as the authority and tells every session to check them rather than trust memory (G1). If the installed version drifts ahead of the vendored one, that instruction becomes false in a way nobody notices — the session dutifully reads the docs, gets an answer that was right for 4.1.0, and writes code against a library that has moved. A caret makes that happen silently on somebody else's `npm install`. Upgrading is a deliberate act: bump the pin and re-vendor in the same change, never one without the other. _[earned 2026-08-11]_
+
+### P2: One game for the life of the window, told what to show
+
+A single `Phaser.Game`, booted against a canvas the host supplies, with a small imperative API over it — show this, redraw it at that scale, resize, clear. Never one game per thing being previewed. **Reason:** three costs, of which only the first is obvious. Booting is slow enough to see. Each boot takes a fresh WebGL context and browsers cap how many exist at once (around sixteen in Chromium), after which the oldest are silently killed — so a long session starts losing contexts for reasons that look like anything but "we made too many". And a rebuild throws away everything the renderer had cached, which turns the operations that should be free (changing a filter, re-cutting frames) back into first loads. The API this forces is about fifty lines and is the good kind of constraint: it makes "what can change without a reload?" an explicit, reviewable list. _[earned 2026-08-11, Phaser 4.1.0]_
+
+### P3: Import settings are applied to the live texture, never by reloading it
+
+`Texture.setFilter(mode)` changes filtering in place. Frames are replaced with `texture.remove(name)` for each existing frame and `texture.add(name, 0, x, y, w, h)` for each new one. Neither touches the network and neither re-uploads the image to the GPU — frames are rectangles held in JavaScript, so re-slicing is arithmetic. **Reason:** the difference is invisible on a 16px sprite and decides whether the tool is usable on a real one. Dragging a frame-size field on a 4096² tileset is a ~64MB upload per keystroke if the texture is re-registered, and free if it is not. `Texture.get('__BASE')` survives slicing and is still the whole image, which is what lets a preview draw the sheet and its frame boundaries at the same time. _[earned 2026-08-11, Phaser 4.1.0]_
+
+### P4: Report what the texture is doing, read back off the texture
+
+Anything that says what the renderer is up to — a status attribute, a test hook, a debug readout — reads `texture.source[0].scaleMode` rather than echoing the value that was handed to `setFilter`. **Reason:** a report built from the request keeps saying the right thing long after the line that applies it stops working, so the one assertion that could have caught the regression is the one that cannot. This is also what makes a canvas feature testable without comparing pixels: the renderer is the witness rather than the caller. _[earned 2026-08-11, Phaser 4.1.0]_
 
 ## Gotchas
 
@@ -29,6 +43,38 @@ Loud failures a v3-trained session will still write confidently: `setTintFill()`
 
 _(Recorded 2026-08-11 from the vendored 4.1.0 migration guide, at vendoring time — before kernel runtime sessions began. Session-earned contamination traps append below as they are hit.)_
 
+### G2: The sprite-sheet parser is not public in v4, and that is a better arrangement than it looks
+
+v3 exposed `Phaser.Textures.Parsers.SpriteSheet`, which a v3-trained session will reach for to re-cut a texture into frames. In 4.1.0 the `Phaser.Textures.Parsers` namespace contains only compressed-texture helpers — `KTXParser`, `PVRParser`, `PCTDecode`, `verifyCompressedTexture` — and nothing for sprite sheets. `TextureManager.addSpriteSheet(key, source, config)` exists but mints a *new* texture from a source, which is the wrong shape for changing the slicing of one already on screen.
+
+**Fix/policy:** compute the frame rectangles yourself and add them with `Texture.add`. Do not treat this as a workaround. The frame geometry — what `frameWidth: 24, margin: 2, spacing: 1` means on an image of a given size — becomes a pure function you own, which is testable in Vitest with no browser, no canvas and no renderer, and which the editor and the runtime can then *share* rather than each interpreting the settings their own way. That sharing is the thing that makes a frame guide drawn over a preview honest: it is describing the same arithmetic that cut the frames.
+
+The arithmetic has one edge worth stating, because it is easy to get subtly wrong and the wrongness is invisible. `n` frames along an axis need `2*margin + n*frame + (n-1)*spacing` pixels — the gaps go *between* frames, so there are `n-1` of them, not `n`. And a grid that fails on one axis produces no frames at all, so it covers nothing on *both*: reporting "no columns but one row" describes a row of frames that does not exist, and anything drawing the leftovers then shades a strip down one side of an image where every pixel is a leftover. _[earned 2026-08-11, Phaser 4.1.0]_
+
+### G3: `export = Phaser` needs a namespace import, and the ESM build is fine with it
+
+The vendored `phaser.d.ts` ends with `declare module 'phaser' { export = Phaser; }`. Under `verbatimModuleSyntax` without `esModuleInterop` — the strict setup this kernel uses — `import Phaser from 'phaser'` does not compile. **Fix/policy:** `import * as Phaser from 'phaser'`. Do not reach for `esModuleInterop` to make the default import work: it is a whole-project compiler change made to accommodate one package, and it is not needed. The npm ESM build (`dist/phaser.esm.js`) carries named exports for everything reachable off the namespace (`Game`, `Scene`, `Textures`, `Scale`, `WEBGL`, …), so the namespace import is correct at runtime as well as at compile time. _[earned 2026-08-11, Phaser 4.1.0, TypeScript 5.9.3]_
+
+### G4: `create` is not declared on `Phaser.Scene`, so it must not carry `override`
+
+The `Scene` class in the v4 types declares `update(time, delta)` but not `create`, `preload` or `init` — they are hooks the framework calls by name. Under `noImplicitOverride` this is the opposite of the usual trap: writing `override create()` is the error, and plain `create()` is correct. **Fix/policy:** worth knowing on sight, because the compiler message points at the keyword rather than at the base class and reads as though the method is misspelt. _[earned 2026-08-11, Phaser 4.1.0]_
+
+### G5: A game given `parent: undefined` appends its canvas to the body
+
+`parent` accepts an element, an id, `null` or nothing — and nothing means "put the canvas in `document.body`". A renderer whose canvas is meant to be handed to whichever panel is currently hosting it must pass `parent: null` explicitly, or a stray canvas appears at the end of the page. **Fix/policy:** `parent: null` whenever the host owns placement, and set the canvas's CSS size yourself. Pair it with `scale: { mode: Phaser.Scale.NONE }` so the Scale Manager does not start watching the window and resizing behind the host's back. _[earned 2026-08-11, Phaser 4.1.0]_
+
+### G6: Headless Chromium under Playwright has real WebGL 2, so a canvas feature is testable in CI
+
+Measured rather than assumed, because the opposite is widely believed: a default `chromium.launch()` reports `WebGL 2.0 (OpenGL ES 3.0 Chromium)` on an ANGLE/SwiftShader device with an 8192px maximum texture size. No launch flags, no `--use-gl=swiftshader`, no `--enable-unsafe-swiftshader`. **Fix/policy:** do not add GL launch arguments speculatively; probe first, in five lines, and add them only if the probe fails. The 8192 limit is the one number worth remembering — a test fixture larger than that would fail for a reason that looks nothing like its cause. _[earned 2026-08-11, Playwright 1.62.1]_
+
 ## Contracts
 
-_None recorded yet. Reference kernel-repo and `vendor/` Phaser 4 doc file paths here; never paraphrase them as prose._
+Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
+
+- `gamedev-skills/vendor/phaser4/PROVENANCE.md` — which Phaser version the vendored ground truth came from. The pin in `kernel-2d/package.json` must match it (P1).
+- `gamedev-skills/vendor/phaser4/MIGRATION-GUIDE.md` — the authority for what changed between v3 and v4.
+- `gamedev-skills/vendor/phaser4/types/phaser.d.ts` — the authority for what exists.
+- `kernel-2d/runtime/index.ts` — the runtime's public surface: what the editor is allowed to import, and the one-way arrow that keeps an exported game clean.
+- `kernel-2d/runtime/preview/texture-view.ts` — P2 and G5 as built: booting one game against a supplied canvas, the image cache, and the report of what was actually drawn.
+- `kernel-2d/runtime/textures/import-settings.ts` — P3 and P4: settings applied to a live texture, and the filter read back off it.
+- `kernel-2d/runtime/textures/frames.ts` — the frame geometry of G2. The single definition of what a slice means, shared by the renderer and by anything drawing over it.

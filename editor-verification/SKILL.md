@@ -71,11 +71,35 @@ Tests that edit settings snapshot every `.meta` in the sample folder before each
 
 `tests/store/`, not `tests/editor/`. **Reason:** Playwright's default match claims `*.test.ts` as well as `*.spec.ts`, so a Vitest file in the browser suite's folder is run by the browser runner. The type-checking half of the same constraint is in `editor-ui` U4. Both are invisible until they bite, and both bite in a way that points somewhere else. _[earned 2026-08-11]_
 
+**One folder per layer, and the sorting rule is which project the test compiles in — not what it is about.** `tests/store/`, `tests/runtime/` and `tests/shell/` are browser-side and are added to `tsconfig.editor.json` and excluded from `tsconfig.json`; everything else stays in the Node project. The catch that is easy to get backwards: a test *about* browser-side code is not necessarily a browser-side test. The runtime-boundary check reads files with `node:fs`, so despite being entirely about `runtime/` it belongs in the Node project — it went to `tests/architecture/`. Sort by what the test imports, not by what it inspects. _[earned 2026-08-11]_
+
 ### V16: An injected clock and an injected writer are what make a store testable without waiting
 
 The document store takes `now`, `saveDebounceMs` and `writeToDisk` as options; the app supplies the real ones, tests supply a clock they move by hand, a zero debounce, and a writer that records what it was asked to write and can be made to fail. **Reason:** the interesting properties are all about ordering — what merges into one undo step, what is written and in what order, what happens to a change while its write is in the air — and every one of them is either untestable or slow if the only way to cross a 600ms window is to wait 600ms. A store that has to be tested through the UI is a store whose ordering rules are not really tested at all. _[earned 2026-08-11]_
 
+### V17: A canvas feature is verified by what the renderer reports and what the DOM shows — never by comparing pixels
+
+Two halves, and neither is a screenshot baseline. The renderer reports what it actually did and the panel puts it on the element (`data-drawn-filter`, `data-drawn-version`, `data-scale`), so an assertion about the picture is an ordinary attribute assertion. Everything drawn *over* the canvas — frame guides, a pivot marker, a caption — is DOM (`editor-ui` U16), so it is counted and read with ordinary locators.
+
+**Reason:** pixel comparison is brittle across machines and GPUs, and it is also the wrong instrument: the question is almost never "are these bytes identical", it is "is the renderer filtering this nearest". The load-bearing detail is that the reported value must be **read back off the renderer's own state, not echoed from the request** (`phaser4-runtime` P4) — an attribute built from what the panel asked for keeps asserting green after the line that applies it stops working, which is precisely the regression the test existed to catch.
+
+Two assertions worth writing that this makes possible. That the *same canvas element* is still there after a setting changes, which is how "nothing was torn down and rebuilt" becomes checkable rather than aspirational. And that the drawn image's bounding box fits inside the stage's, which is a property of the zoom rather than a magic number. _[earned 2026-08-11]_
+
+### V18: A value that settles asynchronously is read once it has stopped moving, not once it exists
+
+A zoom test read the fit scale immediately after selecting a texture, got the fit for a panel that was about to get smaller, and failed later comparing against it. The helper polls until two consecutive reads agree, and returns that.
+
+**Reason:** dockview computes its layout inside `requestAnimationFrame` (`editor-ui` UG1), so anything derived from a panel's size is briefly true and then differently true. A single read is not wrong, it is early — and the failure surfaces several lines away, in the assertion that compares against it, which reads as a bug in the feature. The same shape applies to any value a layout feeds. Tell for the sight test: a test that captures a number into a variable and asserts against it later, where the number depends on an element's size. _[earned 2026-08-11, dockview 8.0.0]_
+
 ## Gotchas
+
+### W8: Clicking a control and reading the result in the next statement reads the value from before the click
+
+`await button.click()` resolves when the click has been dispatched, not when React has re-rendered in response to it. `const after = await scaleOnScreen(page)` on the following line is a coin toss, and it lands on "unchanged" often enough to look like the button is broken. **Fix/policy:** put a poll between the act and the read — `await expect.poll(read).not.toBe(before)`, then read. This is not the same as V5's no-fixed-sleeps rule, which is about waiting for the *system*; this is about waiting for the *framework*, and it applies to every assertion that follows a click on a control whose effect is state rather than navigation. _[earned 2026-08-11, Playwright 1.62.1, React 19.2.8]_
+
+### W9: A test that scans a folder passes vacuously when the folder is gone
+
+The runtime-boundary test walks `runtime/` and asserts no file imports from `editor/`. Renaming or moving that folder makes the walk return nothing, every assertion trivially true, and the suite green while the check it represents has stopped existing. **Fix/policy:** any test that derives its cases from a directory listing asserts the listing is non-empty first, as its own named test. One line, and it is the difference between a guard and a decoration. Same shape as V6's anchoring rule: an absence only means something once something else has proved the mechanism was live. _[earned 2026-08-11]_
 
 ### W7: A test can be green *because* of the bug, and fixing the bug is what reveals it
 
@@ -121,6 +145,11 @@ Anything sized through `requestAnimationFrame` — dockview's whole grid, among 
 - `kernel-2d/tests/editor/select-asset.ts` — the tree-navigation helper of W6, shared by every spec that needs something selected.
 - `kernel-2d/tests/editor/import-settings.spec.ts` — the acceptance criteria for editing, transcribed in the human's units (V1), plus the snapshot-and-restore of V14.
 - `kernel-2d/tests/store/documents.test.ts` — the transaction API on its own (V15, V16): one stack across two files, what merges into one undo step, and every way a re-read can be stale.
+- `kernel-2d/tests/editor/viewport.spec.ts` — V17 and V18: a canvas feature asserted without comparing a single pixel, and the settle helper that keeps a layout-derived number honest.
+- `kernel-2d/tests/runtime/frames.test.ts` — the frame geometry, held to "every frame reported is a whole frame, and every pixel outside one is counted".
+- `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
+- `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and the runtime/editor boundary as a test rather than a promise (`editor-kernel` D20).
+- `kernel-2d/tests/sidecar/asset-endpoint.test.ts` — the read privilege of `editor-kernel` D21 held to its four lines, refusals first.
 - `kernel-2d/tests/sidecar/meta-write.test.ts` — the service's editor-driven write held to its edges, with every refusal checked against bytes *and* timestamp (V12).
 - `kernel-2d/tests/sidecar/meta-schema.test.ts` — V7 for the `.meta` format, and the rejections that make it a contract.
 - `kernel-2d/tests/sidecar/meta-files.test.ts` — V12: the sidecar's write privilege held to exactly its three lines, against a real filesystem.

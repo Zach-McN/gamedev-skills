@@ -49,9 +49,33 @@ What is selected is held in a plain React context above the docking layout, not 
 
 The Assets panel and the Inspector both need the project folder. The hook that fetches it and holds a change stream open is called once, in a provider above the layout, and both panels read from that. **Reason:** two callers means two streams, two fetches, and — the part that actually bites — two copies refreshed on separate timers, so one panel can be a beat behind its neighbour with nothing on screen saying so. Same reasoning as U5 one level up: the failure is not the wasted work, it is the two answers. **Providers go above the docking layout**, because dockview mounts and unmounts panel bodies as tabs move, and state held inside a panel is lost the first time the human drags it. _[earned 2026-08-11]_
 
-### U10: An inspector always says something, and "nothing to tune" is a sentence rather than a blank
+**Extended twice, and the second reason is stronger than the first.** The selected file's `.meta` moved up here the moment the Viewport wanted it as well as the Inspector. The U9 reason applies as stated — but there is a second one that only shows up when the fetch has a side effect. Asking for the settings is also what *puts them in the document store*, so with the fetch owned by the Inspector, closing that tab would leave the Viewport drawing a texture whose settings never arrived: a panel silently depending on another panel being open, with no error and nothing on screen to explain it. **A fetch that populates shared state is not a panel's to own, whatever the caller count.** Worth checking on sight: if a hook writes somewhere other than its own component, it belongs above the layout.
+
+**A live renderer belongs up here too, and for a harder reason.** A Phaser game owned by the Viewport panel is destroyed and rebuilt the first time somebody drags that tab — the same teardown a per-selection design would have caused, arriving through a different door. Rebuilding means a fresh WebGL context, which browsers hand out in limited numbers (`phaser4-runtime` P2). The canvas is created detached, the panel adopts it on mount and returns it on unmount, and the game never notices. _[earned 2026-08-11]_
+
+### U15: A live canvas is adopted by the panel that hosts it, not created by it
+
+The renderer's canvas is a plain DOM element made outside React and held by the provider. The panel renders an empty host and, in an effect, appends the canvas on mount and removes it on unmount. Sizing is a `ResizeObserver` on the host, reported up to the provider, which tells the renderer.
+
+**Reason:** this is what makes U9's third case work in practice. The canvas cannot be a React child, because moving it between parents on every tab drag would mean unmounting and remounting the element itself. Two details that are easy to get wrong: the game must be given `parent: null` or it appends its own canvas to the document body (`phaser4-runtime` G5); and everything the panel sends *down* (its size) should be separate from everything it sends *across* (what to draw), because a panel being dragged wider is not a reason to fetch anything again. _[earned 2026-08-11]_
+
+### U16: What a panel draws over a canvas is DOM, and its numbers come from the renderer
+
+Frame guides and the pivot marker are an SVG layer above the canvas, absolutely positioned and `pointer-events: none`. Every rectangle in it is one the renderer reported having cut, at the placement the renderer reported having drawn at; the overlay computes no geometry of its own.
+
+**Reason:** two payoffs and one guard. A one-pixel line stays one pixel at 24× where a renderer-drawn line becomes a 24-pixel bar unless it is drawn in screen space, which means screen-space arithmetic inside a game renderer. Text stays selectable and legible. And it is assertable — a frame count, a marker position and a caption are ordinary locators, which is how a canvas feature gets tested without comparing pixels (`editor-verification` V17). The guard is the reason the numbers come from the renderer rather than from the same inputs: an overlay that re-derives the placement is a second derivation that agrees until it doesn't. _[earned 2026-08-11]_
+
+### U17: Zoom for pixel art is whole steps only, fitting by default
+
+The scale ladder is `1/16 … 1/2, 1, 2, 3, 4, 6, 8 … 32` — always a whole number of screen pixels per image pixel or the reverse. Fitting picks the largest step that fits the panel; the step buttons turn fitting off; a Fit button turns it back on, and so does selecting a different file.
+
+**Reason:** at 3.4× some rows of a sprite are three pixels tall and some are four, which reads as *badly drawn art* rather than as a badly chosen zoom — so the human goes looking for the fault in their own work. Filling the panel exactly is not worth that. Two details: selecting a different file returns to fitting, because a zoom chosen for a 16px sprite is not a choice anybody made about a 4096px tileset; and fitting cannot be decided until the image's size is known, so the first draw lands at whatever scale was current and a follow-up settles it. That settles rather than oscillating for the same reason `editor-kernel` G10 does — after one pass the drawn scale *is* the wanted scale, so the condition is false and nothing runs again. _[earned 2026-08-11]_
+
+### U10: A panel always says something, and "nothing to show" is a sentence rather than a blank
 
 Every state gets prose: a folder, a document whose format has no inspector yet, a file the editor does not import, an asset whose settings have not landed, a settings file that will not parse, and nothing selected at all. **Reason:** a blank panel is indistinguishable from a broken one, and in a kernel where most formats do not exist yet, "there is nothing here" is the *common* case rather than the exceptional one. Two things that make the sentences worth reading: name what the thing is (a scene, a sound) rather than what it lacks, and say what would change it ("its own inspector arrives with the scene format"). When settings cannot be parsed, **show the file's text** — being told a file is unreadable without being shown it forces the human out of the editor to find out why. _[earned 2026-08-11]_
+
+**Generalised from the inspector to any panel, by the viewport needing the identical rule.** Two things the second application made explicit. **Nothing-selected and this-is-not-the-right-kind-of-thing must be different sentences**, because being able to tell them apart is the entire value — "Select a texture to see it here" and "hit.wav is a sound; the viewport draws textures" are different situations and collapsing them into one blank loses both. And **the previous answer is cleared when the new one is a sentence**: a viewport that leaves the last picture up while the caption talks about a sound is worse than an empty one, because it looks like it is working. _[earned 2026-08-11]_
 
 ### U11: What a file says it is beats what its name suggests
 
@@ -108,6 +132,12 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store.
 - `kernel-2d/editor/panels/TextureSettings.tsx` — the first editable controls, hand-written, and the worked example of U14. Every one of them goes through the transaction API and none of them knows undo exists.
 - `kernel-2d/editor/shell/useUndoShortcuts.ts` — U13, and the only keyboard handler in the editor.
+- `kernel-2d/editor/panels/ViewportPanel.tsx` — U15 and the worked example of U10 generalised: the canvas's host, and every sentence that stands in for a picture.
+- `kernel-2d/editor/panels/ViewportOverlay.tsx` — U16. Frame guides, the strip no frame reaches, the pivot marker, and the caption that says in words what the shading says in pixels.
+- `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: one renderer per window, above the layout, and the zoom state of U17.
+- `kernel-2d/editor/shell/asset-meta-context.tsx` — U9's second case, and why a fetch with a side effect is never a panel's to own.
+- `kernel-2d/editor/shell/zoom.ts` — the scale ladder of U17.
+- `kernel-2d/editor/shell/asset-kinds.ts` — what a file is (U11) and how to find it in the tree. Shared the moment a second panel needed the same answer.
 - `kernel-2d/editor/shell/asset-rows.ts` — which rows a folder has, and why a sidecar folds into the row of the file it annotates (`editor-kernel` D4). Shared because the Inspector counts a folder the same way the panel lists it.
 - `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, and nothing else.
 - `kernel-2d/editor/shell/project-context.tsx` — U9. One folder read and one change stream per window.
@@ -126,6 +156,8 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 **Not yet written** — until a path appears here, the contract does not exist and must not be assumed:
 
 - Inspector auto-generation from Zod schemas. The three texture controls are hand-written on purpose: the useful generic version is written once several inspectors exist to generalise from.
+- The Hierarchy panel. Still a placeholder; it lands with the scene format.
+- Anything editable in the viewport — gizmos, dragging a pivot, dragging the frame grid. The Inspector's controls are the only way to change these values, deliberately.
 - The panel menu and saved layouts (UG4).
 - A keyboard shortcut registry. There is exactly one handler (U13), and one does not need a registry.
 - Anything that shows the undo stack — a history panel, an Edit menu, an "Undo <label>" caption. The labels exist and `peekUndo`/`peekRedo` expose them; nothing reads them yet.

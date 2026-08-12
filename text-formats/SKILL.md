@@ -51,6 +51,14 @@ Every object in `AssetMetaSchema` is `z.looseObject`, at every level, so keys th
 
 The rule generalises. **A format the editor reads and later rewrites is loose. A format the editor only ever produces — a served answer, a computed view — stays strict**, because there is no human authorship in it to protect and strictness there catches a producer emitting a field nobody declared. `MetaViewSchema` is strict for exactly that reason while the document it carries is not. _[earned 2026-08-11, Zod 4.4.3]_
 
+### T10: A schema lives with the layer that ships, not with the process that writes it
+
+The `.meta` schema was written by the filesystem service and lived beside it, and moved to `runtime/formats/` the first time the game runtime had to read import settings. **Reason and the rule to apply going forward:** ask "which layers read this?" when the format is created, and put it in the one that ships — a development-only process importing a shipping module is fine, the reverse is not (`editor-kernel` D1/D20). A schema compiled by more than one TypeScript project must also have **no relative imports of its own**, because one project wants `.js` extensions on them and the other must not have them (`editor-ui` U4); depending only on `zod` is what keeps that true. Both are a one-line decision at creation and a cross-cutting move afterwards. _[earned 2026-08-11]_
+
+### T11: A format that describes a file carries when it changed, not only how big it is
+
+`FileNode` carries `mtimeMs` alongside `size`. **Reason:** size does not identify a version — a re-export from an art tool very often produces the same byte count — so anything keyed on size alone keeps serving the old contents after the human's edit (`editor-kernel` G11). Two details: it is `z.number().nonnegative()` rather than `.int()`, because some filesystems report finer than a millisecond and rounding would make the schema disagree with `stat`; and it costs nothing on disk because this format is served rather than stored (T4). _[earned 2026-08-11]_
+
 ## Gotchas
 
 ### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
@@ -65,8 +73,8 @@ Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify
 
 ## Contracts
 
-- `kernel-2d/sidecar/tree-schema.ts` — the file-tree format: `ProjectTree`, `DirectoryNode`, `FileNode`, and the format/version literals. The first format in the kernel, and the worked example of T1–T4.
+- `kernel-2d/sidecar/tree-schema.ts` — the file-tree format: `ProjectTree`, `DirectoryNode`, `FileNode`, and the format/version literals. The first format in the kernel, and the worked example of T1–T4 and T11.
 - `kernel-2d/tests/sidecar/tree-schema.test.ts` — the round-trip test every subsequent format copies.
-- `kernel-2d/sidecar/meta-schema.ts` — the `.meta` format, and the worked example of T5–T7: the discriminated union on `type`, the defaults factory both writers share, and the extension→type vocabulary.
+- `kernel-2d/runtime/formats/meta-schema.ts` — the `.meta` format, and the worked example of T5–T7, T9 and T10: the discriminated union on `type`, the defaults factory every writer shares, the extension→type vocabulary, and why it sits in the layer that ships.
 - `kernel-2d/sidecar/meta-view-schema.ts` — T8: the answer *about* a `.meta`, as distinct from the `.meta` itself.
 - `kernel-2d/tests/sidecar/meta-schema.test.ts` — the round trip plus the rejections that make the schema a contract rather than a suggestion.

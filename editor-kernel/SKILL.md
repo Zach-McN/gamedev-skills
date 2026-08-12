@@ -21,6 +21,35 @@ The runtime ships with the game (render loop, entity layer, input, gameplay code
 
 The editor imports the runtime as a library and instantiates it in the center panel. Play mode destroys the edit scene and boots the runtime's real scene loader against the same JSON. **Reason:** eliminates "looks different in the editor" divergence by construction — there is only one renderer, so the preview cannot lie. This is the Godot/Unity architecture. _[seeded 2026-08-11, report §4]_
 
+**Confirmed in build, and sharpened by what "cannot lie" turned out to mean.** The first thing the runtime drew was one texture with its import settings applied. Three things settled by it:
+
+1. **The line is about the renderer, not about the canvas.** The temptation is to put everything the viewport shows into `runtime/`, because it is all "the preview". But a frame guide and a pivot marker are annotations *about* a texture — no shipped game draws either — so they are editor chrome, and editor chrome inside the shipping layer is exactly what D1 forbids. They went into an SVG overlay in `editor/`, which also keeps a line one pixel wide at any zoom and costs the renderer nothing.
+2. **What stops the overlay lying is a shared function, not a shared canvas.** The dishonesty worth fearing was never "these lines were drawn by different code", it was "these lines describe frames the runtime would not cut". That is fixed by exporting one definition of what a slice means from `runtime/` and having both the real slicing and the guides call it. Once the geometry is shared, drawing the guides in the renderer buys nothing and costs the boundary.
+3. **The renderer reports what it drew; nothing downstream recomputes it.** `show()` answers with the placement it actually used and the frames it actually cut, and the overlay draws *those*. The alternative — the panel deriving the same placement a second time from the same inputs — is the U5/U9 failure one more layer out: two derivations that agree until they don't, with nothing on screen saying which one you are looking at.
+
+_[earned 2026-08-11]_
+
+### D20: A module the runtime needs lives in `runtime/`, whoever else uses it
+
+The `.meta` format was written for the sidecar and lived there. The moment the runtime had to read import settings it had to move, because the sidecar is development-only and `runtime/` importing it would have broken D1 in the first file of the new layer. It now sits at `kernel-2d/runtime/formats/meta-schema.ts`, and the sidecar and editor both import it from there.
+
+**Reason:** D16 already fixes the *direction* — the shared module owns the vocabulary and the Node module imports it — but says nothing about *where* the shared module should sit, and "beside whoever wrote it first" is the answer that quietly fails. Of the three layers only one ships, so the rule that keeps working is: **anything the shipping layer reads belongs to the shipping layer.** Ask it when a format is created, not when the runtime finally needs it; the move is mechanical either way, but it is a dozen import lines now and a merge conflict across a session's work later.
+
+Two things learned doing it, both worth having in advance:
+
+- **A module compiled by both TypeScript projects must have no relative imports of its own.** The Node project wants `.js` extensions on them and the browser project must not have them (`editor-ui` U4), so one file cannot satisfy both. This one imports only `zod` and is therefore safe in both; a session adding a relative import to it would break the sidecar's typecheck with an error pointing at a file nobody touched. Say so in the file.
+- **The boundary is worth a test, because the failure is silent.** `kernel-2d/tests/architecture/boundaries.test.ts` reads every file under `runtime/` and fails if any of them imports from `editor/`, `sidecar/`, `scripts/` or `tests/`, and separately holds the runtime's external dependencies to a named list. An import in the wrong direction compiles, passes every behaviour test, runs perfectly in the editor, and surfaces as a shipped game carrying a React panel. There is no moment at which it announces itself.
+
+_[earned 2026-08-11]_
+
+### D21: The service serves the bytes of an asset, and only of an asset
+
+`GET /asset?path=…` hands over one file, and the rule is four lines: only a file the editor recognises as an asset (the extension vocabulary in the `.meta` schema — textures, audio, fonts, never a `.meta`, never a scene); never outside the project folder, through the same path check every other browser-supplied path already passes; a read that creates, writes and lists nothing; and a content type from the extension, never guessed from the contents.
+
+**Reason:** the same discipline as D17's three lines, applied to reading. The obvious implementation is a static file server rooted at the project folder, and it is a much larger privilege than the feature asked for — after it exists nobody can say what the editor is able to read without going and looking. Narrowing it to the asset vocabulary costs one line and means the answer is already written down somewhere that has to stay current, because it is the same list that decides which files get a `.meta`.
+
+Two practicalities: stream the file rather than reading it, or the size of somebody's art becomes the size of this service's heap; and answer `no-store`, because the file on disk is the record and the editor is expected to show a re-saved texture within the second. _[earned 2026-08-11]_
+
 ### D3: All authored state is human-readable text in the project folder
 
 No binary project database, no hidden index of record. **Reason:** three compounding payoffs — git-diffable history, and the ability for a session to inspect live game state with `grep` instead of loading it through the editor. The third is context economics: a well-factored text project lets a session read the schema rather than the codebase, which is what keeps sessions cheap as the kernel grows. _[seeded 2026-08-11, report §3/§4]_
@@ -182,6 +211,10 @@ The editor writes a `.meta`, the watcher reports the change, the folder is re-re
 
 Two more guards belong beside it, for the same reason and with different timing: ignore a re-read while a write for that file is queued or in flight (it is the file as it was before the keystroke), and ignore one while a write for that file has been refused (the editor is holding a change the folder never accepted). _[earned 2026-08-11]_
 
+### G11: A file re-saved with the same number of bytes is invisible to anything watching its size
+
+Re-exporting a PNG from Photoshop very often lands on the identical byte count. Anything that caches a file — a preview keyed by URL, most obviously — will keep showing the old contents, and the human's edit appears simply not to have happened. **Fix/policy:** carry the modification time alongside the size wherever the editor describes a file (`FileNode.mtimeMs` in the file-tree format), and use it as the cache key. Do not round it to whole milliseconds: some filesystems report finer than that, and rounding is the schema quietly disagreeing with `stat`. A change-event counter is the tempting alternative and is worse — it is a second piece of bookkeeping that goes wrong when an event is missed, whereas the timestamp is simply true. _[earned 2026-08-11]_
+
 ### G8: Path separators leak the authoring machine into the data
 
 Windows produces `assets\textures\knight.png`, macOS produces `assets/textures/knight.png`, and the same project then serializes two different ways depending on who saved last. **Fix/policy:** one conversion helper at the boundary, forward slashes in every path that reaches JSON, a terminal, or a test, and an explicit assertion in the test suite that no emitted path contains a backslash. This has to be settled in the first format, because every later format inherits the convention. _[earned 2026-08-11]_
@@ -203,7 +236,13 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/status-schema.ts` — the status format served by `GET /`: which project is open and what else this sidecar serves. The first format read by both halves of the system.
 - `kernel-2d/sidecar/event-schema.ts` — the change format carried by `GET /events`, and the home of the change vocabulary (D16).
 - `kernel-2d/sidecar/feed.ts` — the hand-off from the watcher to everything listening: the terminal, and every open editor window.
-- `kernel-2d/sidecar/meta-schema.ts` — `MetaSchema`: the `.meta` sidecar format, the extension→type vocabulary, and the defaults factory both writers build from. Owned by `text-formats`.
+- `kernel-2d/runtime/formats/meta-schema.ts` — `AssetMetaSchema`: the `.meta` sidecar format, the extension→type vocabulary, and the defaults factory every writer builds from. Lives in `runtime/` because the shipping layer reads it (D20). Owned by `text-formats`.
+- `kernel-2d/runtime/index.ts` — the runtime's public surface: what the editor may import, and the one-way arrow of D1/D2.
+- `kernel-2d/runtime/textures/frames.ts` — what a slice means, in pixels. One definition, shared by the renderer that cuts the frames and the overlay that draws them (D2).
+- `kernel-2d/runtime/textures/import-settings.ts` — what a setting *does*: filtering and slicing applied to a live texture, and the filter read back off it rather than echoed.
+- `kernel-2d/runtime/preview/texture-view.ts` — one renderer for the life of the window, and its report of what it actually drew.
+- `kernel-2d/sidecar/asset-files.ts` — D21 in four lines: the whole of what this service will read out of a human's project folder.
+- `kernel-2d/tests/architecture/boundaries.test.ts` — D1 as a test rather than as a promise.
 - `kernel-2d/sidecar/meta-view-schema.ts` — what `GET /meta` answers with, including the two answers that are not a meta: there isn't one, and there is one this editor cannot read.
 - `kernel-2d/sidecar/meta-files.ts` — the whole of D17 in one file: create-when-missing, the startup sweep, the one write the editor can ask for, and the path validation everything from the browser passes through.
 - `kernel-2d/sidecar/server.ts` — the HTTP surface as it currently stands: `GET /`, `GET /tree`, `GET /events`, `GET /meta?path=…`, and `PUT /meta?path=…` — the only non-GET this service answers at all.
@@ -219,5 +258,6 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 - `SceneSchema` — entity list, component maps, transforms, asset refs.
 - `PrefabSchema` — reusable entity templates.
-- Static asset serving. The write side of the sidecar exists now, but only for a `.meta` (D17); no other document format has one because no other document format exists.
+- A runtime scene loader. The runtime exists now, but only far enough to draw one texture with its import settings applied — there is no scene format for it to load and no entity layer beneath it.
+- Play mode. D2's second sentence is still unspent: nothing yet destroys an edit scene and boots the real loader.
 - Inspector controls generated from a Zod schema. The three texture settings are hand-written; generalising is worth doing once several inspectors exist to generalise *from*.
