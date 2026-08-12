@@ -29,6 +29,14 @@ Two things learned running two of them, both reassuring: nothing in Phaser is gl
 
 Anything that says what the renderer is up to — a status attribute, a test hook, a debug readout — reads `texture.source[0].scaleMode` rather than echoing the value that was handed to `setFilter`. **Reason:** a report built from the request keeps saying the right thing long after the line that applies it stops working, so the one assertion that could have caught the regression is the one that cannot. This is also what makes a canvas feature testable without comparing pixels: the renderer is the witness rather than the caller. _[earned 2026-08-11, Phaser 4.1.0]_
 
+### P5: Pixel art is kept crisp by moving the camera onto the device grid, never by rounding each sprite
+
+`roundPixels` defaults to `false` in v4 (G1), and the temptation is either to switch it back on or to `Math.round` every sprite's position on the way into `setPosition`. Do neither. Adjust the *camera* by less than a pixel so that the scene's origin lands on a whole device pixel, and position everything through that camera unrounded.
+
+**Reason:** all three keep the art crisp; only this one keeps the distance between two sprites exact. Per-sprite rounding moves each object by its own fraction of a pixel, which is invisible on screen and not invisible at all to anything that *measures* what was drawn — the extent of a level then comes out slightly different at each zoom, and a "frame everything" built on it stops being idempotent. That surfaces two files away as a key that does something different the second time it is pressed.
+
+Two practicalities. The residue is honest and worth stating in the code: an entity at a fractional position is still drawn at a fractional position and is still soft, which is the designer's own number rendered faithfully. And whatever the renderer *reports* should be the camera it was handed rather than the nudged one — the snap is sub-pixel presentation, and reporting it makes the caller's own state disagree with itself the next time it compares. _[earned 2026-08-12, Phaser 4.1.0]_
+
 ## Gotchas
 
 ### G1: v3 contamination — AI-generated Phaser code defaults to Phaser 3
@@ -94,4 +102,4 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/runtime/textures/frames.ts` — the frame geometry of G2. The single definition of what a slice means, shared by the renderer and by anything drawing over it.
 - `kernel-2d/runtime/scene/scene-view.ts` — the second surface of P2 as amended: one game, told which scene and which textures, reporting what it drew.
 - `kernel-2d/runtime/scene/entity-layer.ts` — display objects kept in step with a list of entities by id, updated in place rather than rebuilt, and the `getBounds()` report of G8.
-- `kernel-2d/runtime/scene/coordinates.ts` — the y-up-to-y-down flip and the rotation sign, with no Phaser import, so both are testable without a browser.
+- `kernel-2d/runtime/scene/coordinates.ts` — the y-up-to-y-down flip, the rotation sign, the camera, and the pixel-grid snap of P5 — with no Phaser import, so every one of them is testable without a browser.

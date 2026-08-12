@@ -50,6 +50,20 @@ _[earned 2026-08-11]_
 
 Two practicalities: stream the file rather than reading it, or the size of somebody's art becomes the size of this service's heap; and answer `no-store`, because the file on disk is the record and the editor is expected to show a re-saved texture within the second. _[earned 2026-08-11]_
 
+### D23: The viewport's camera is a scale and an offset in the coordinate module, never the engine's own camera
+
+`runtime/scene/coordinates.ts` gains `Camera = { scale, focus }` and the arithmetic around it — pan, zoom-about-a-point, frame, and the inverse of each. Phaser's `setScroll`/`setZoom` were considered and declined.
+
+**Reason: the renderer reports what it drew in screen pixels, and the editor's overlay draws those numbers (D2).** An engine camera moves the authority over where things land into the engine, and `getBounds()` then answers in world coordinates — so either the overlay converts them, which is the second derivation this arrangement exists to prevent, or the renderer converts them back, which is this arithmetic anyway with the engine's underneath it. Keeping it here also keeps the module free of any engine import, so panning and zooming are testable with no browser, no canvas and no renderer. The cost, paid knowingly: about twenty lines of arithmetic, and no free ride on whatever the engine's camera does next.
+
+Three things settled by building it, none of them visible from the outside:
+
+1. **The offset is the scene point at the *centre* of the canvas, not at a corner.** Identical information, and it is the difference between a panel dragged wider revealing scene on both sides and one that shifts everything already on screen. "I resize the panel and do not lose my place" then falls out of the shape of the data rather than being arranged for.
+2. **Snap the camera onto the device pixel grid once; never snap each sprite as it is drawn.** Both keep pixel art crisp. Only the first keeps the distance between two entities exact at every zoom — with per-sprite rounding, the measured extent of a level comes out slightly different depending on how far in you happen to be, so **framing stops being idempotent**. That surfaces as pressing the frame key twice and getting two different zooms, which reads as a broken key rather than as a rounding decision three files away.
+3. **Framing is a one-shot press, not a mode.** A texture preview is something you look at, so it can sensibly stay in a fitting mode; a scene camera is something you drive, and a resize has to keep your place rather than reframe. The two viewports share a zoom ladder and deliberately do not share this.
+
+_[earned 2026-08-12]_
+
 ### D3: All authored state is human-readable text in the project folder
 
 No binary project database, no hidden index of record. **Reason:** three compounding payoffs — git-diffable history, and the ability for a session to inspect live game state with `grep` instead of loading it through the editor. The third is context economics: a well-factored text project lets a session read the schema rather than the codebase, which is what keeps sessions cheap as the kernel grows. _[seeded 2026-08-11, report §3/§4]_
@@ -282,9 +296,11 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/document-view-schema.ts` — the registry of document formats the editor reads and writes, keyed by the `format` the document itself carries (D22), and the answer `GET /document` gives about one.
 - `kernel-2d/sidecar/document-files.ts` — D22 in one file: the widened write, the guard that it never creates, and the guard that it only replaces a document with one of the format already there.
 - `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema`: the flat entity list, the transform, the open component map and the registry of components the kernel knows. Owned by `text-formats`.
-- `kernel-2d/runtime/scene/scene-view.ts` — the second renderer, and its report of which entities it drew and where.
+- `kernel-2d/runtime/scene/scene-view.ts` — the second renderer, and its report of which entities it drew, where, through which camera, and how much level there turned out to be.
 - `kernel-2d/runtime/scene/entity-layer.ts` — documents into drawn objects: matched by id, updated in place, depth from list order.
-- `kernel-2d/runtime/scene/coordinates.ts` — scene space (y-up, bottom-left) and how it becomes screen space. One definition, no Phaser.
+- `kernel-2d/runtime/scene/coordinates.ts` — scene space (y-up, bottom-left), the camera (D23), and how the two become screen space. One definition, no Phaser.
+- `kernel-2d/editor/shell/scene-view-context.tsx` — where the view lives: one camera per scene for the life of the window, and the three conditions a scene has to satisfy before it is framed.
+- `kernel-2d/editor/shell/useSceneGestures.ts` — middle-drag, space-drag, wheel-to-zoom, and the two framing keys.
 - `kernel-2d/editor/shell/scene-assets.tsx` — D5 as built: resolve by path, compare the id, report rather than veto.
 - `kernel-2d/editor/store/document-disk.ts` — the editor's write for documents, beside `meta-disk.ts`.
 - `kernel-2d/editor/store/documents.ts` — **the transaction API** (D7): the store, the two doors, the single time-ordered undo stack, the coalescing rule, the debounced save, and the convergence argument of G10 written where the handler is. Nothing else in the editor may change a document.
@@ -298,7 +314,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 **Not yet written** — these are the kernel's core contracts and land as the corresponding sessions build them. Until a path appears here, the contract does not exist and must not be assumed:
 
 - `PrefabSchema` — reusable entity templates. The document endpoint is already shaped to take it: adding one is a schema plus a line in the registry.
-- A camera. The scene viewport draws 1:1 with the scene's origin at the bottom-left corner of the panel, so an entity placed outside that area is off screen and findable only in the Hierarchy. Panning, zooming and a scene-space-to-screen scale all belong in `runtime/scene/coordinates.ts` when they land, not in a second conversion somewhere else.
+- Hit-testing a click in the viewport against what was drawn. The camera's inverse exists and is exact, so this is arithmetic that is already there; nothing yet calls it from a pointer event, and nothing in a viewport can be selected or dragged.
 - Parenting. The entity list is flat and ordered, which is the shape a `parent` field can be added to without a migration; nothing can set one yet, so nothing carries one.
 - A fixup tool for references whose files have moved. D5's id is read and compared today, and there is nothing that reconciles the pair.
 - Play mode. D2's second sentence is still unspent: nothing yet destroys an edit scene and boots the real loader.

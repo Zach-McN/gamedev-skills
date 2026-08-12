@@ -98,6 +98,28 @@ The scale ladder is `1/16 … 1/2, 1, 2, 3, 4, 6, 8 … 32` — always a whole n
 
 **Reason:** at 3.4× some rows of a sprite are three pixels tall and some are four, which reads as *badly drawn art* rather than as a badly chosen zoom — so the human goes looking for the fault in their own work. Filling the panel exactly is not worth that. Two details: selecting a different file returns to fitting, because a zoom chosen for a 16px sprite is not a choice anybody made about a 4096px tileset; and fitting cannot be decided until the image's size is known, so the first draw lands at whatever scale was current and a follow-up settles it. That settles rather than oscillating for the same reason `editor-kernel` G10 does — after one pass the drawn scale *is* the wanted scale, so the condition is false and nothing runs again. _[earned 2026-08-11]_
 
+### U19: Where the human is looking is per-window and per-scene, held above the layout, and framing waits until the view is worth framing
+
+The scene viewport's camera lives in the provider above the docking layout, as a map from scene path to camera, for the life of the window. Not in the document store, never in a transaction, never serialized (U8) — so Ctrl-Z after a pan reverses the last thing *changed*, by construction rather than by care. Opening a scene for the first time frames it; every later visit finds the view where it was left, including after dragging the tab, which dockview would otherwise reset by unmounting the panel body.
+
+The ladder is U17's, shared unforked with the texture tab so `8×` means one thing across the editor. What is deliberately *not* shared is the mode: a texture preview stays in a fitting mode, and a scene has a one-shot **Frame all** press instead, because a scene camera is driven rather than looked at and a resize has to keep the human's place.
+
+**The interesting part is not where it lives, it is when a scene may be framed.** Framing happens once per scene, so anything wrong at that instant stays wrong until the human touches the view. Three conditions, each of which was a wrong framing before it was a condition:
+
+1. **Every texture has resolved, *and* the report on screen is a report of all of them.** Both halves, and the second is the one that gets missed: a scene's textures resolve one at a time, so the same scene is drawn several times as it opens, and the report being held when the last `.meta` lands is a real report of that scene with a sprite still missing from it. An entity with no picture counts as a point rather than as the area it covers, so a level whose widest object had not arrived is framed on the wrong middle. The fix is to hold *which request* the current report came from and compare by identity — the scene's path cannot answer this, because every one of those reports carries the same path.
+2. **The canvas is the size of the panel**, which is a stronger condition than the panel having been measured. A renderer boots at a size of its own and is told the real one when the observer fires, so a scene can be reported drawn on a canvas that has nothing to do with the panel it is in.
+3. **The panel has been measured at all** (U18): a tab behind another one is 0×0.
+
+_[earned 2026-08-12]_
+
+### U20: A gesture surface reads pointer and wheel events from the DOM directly, and its keys are the panel's rather than the window's
+
+Middle-drag and space-drag pan; the wheel zooms toward the cursor; `Home` frames everything and `F` frames the selection. That set is what Godot, Unity's 2D view and Tiled have all converged on, plus the space-and-drag habit every art tool since Photoshop has taught. **Left-drag and right-drag are deliberately left unclaimed** — left-drag belongs to placing and selecting, and right-drag is a 3D flythrough idiom that collides with a context menu in a 2D view.
+
+**Reason it is not React's event props:** `onWheel` cannot cancel anything (UG6), and a pan wants pointer capture, which is a DOM call on a real element anyway. The listeners go on the canvas's host in an effect, and the two keys go on the window in a second one, guarded so they never fire while the human is typing (UG7).
+
+One shape worth copying: everything the gesture layer needs arrives as callbacks and it holds no camera of its own, so it is a translator from events to intentions and the state stays in one place (U19). What it *does* own is the two pieces of transient interaction state nothing else can know — whether a drag is in progress and whether space is held — which the panel turns into the grab cursor. Clear the space flag on window blur, or alt-tabbing away mid-gesture leaves the editor believing it is still held and the next left-click pans. _[earned 2026-08-12]_
+
 ### U10: A panel always says something, and "nothing to show" is a sentence rather than a blank
 
 Every state gets prose: a folder, a document whose format has no inspector yet, a file the editor does not import, an asset whose settings have not landed, a settings file that will not parse, and nothing selected at all. **Reason:** a blank panel is indistinguishable from a broken one, and in a kernel where most formats do not exist yet, "there is nothing here" is the *common* case rather than the exceptional one. Two things that make the sentences worth reading: name what the thing is (a scene, a sound) rather than what it lacks, and say what would change it ("its own inspector arrives with the scene format"). When settings cannot be parsed, **show the file's text** — being told a file is unreadable without being shown it forces the human out of the editor to find out why. _[earned 2026-08-11]_
@@ -127,6 +149,24 @@ It renders what has been typed while that text is in play, and the document's va
 **Reason:** a number input fed straight from the document cannot be emptied to type a new value — clearing it parses as nothing, the document keeps the old number, and it reappears under the cursor mid-edit. But the field must still lose to the document when a value arrives from somewhere else, or undo and a text-editor save both appear to do nothing while the field has focus. Committing per keystroke rather than on blur is what keeps "on disk within a second" true during a long edit; the undo step stays single because of the merge key, not because the commit was held back. _[earned 2026-08-11]_
 
 ## Gotchas
+
+### UG6: React's `onWheel` cannot `preventDefault`, and a middle-button `mousedown` must
+
+Two ways a viewport gesture fails silently, both fixed in the same effect.
+
+**The wheel.** React registers its root-level wheel handling as *passive*, so `event.preventDefault()` inside an `onWheel` prop does nothing whatever — no error, no warning in production. The visible symptom is not the wheel: it is that a trackpad pinch (which arrives as a wheel event with `ctrlKey`) zooms the entire editor UI. **Fix/policy:** attach it by hand — `element.addEventListener('wheel', handler, { passive: false })` in an effect — and cancel unconditionally, including the ctrl-wheel. Worth checking on sight anywhere a component wants a wheel to mean something other than scrolling.
+
+**The middle button.** Chrome on Windows opens its autoscroll widget on a middle `mousedown`, and preventing the corresponding `pointerdown` does not reliably stop it. **Fix/policy:** a separate `mousedown` listener that cancels `button === 1`. The symptom without it is a pan that turns into a page scroll with a compass glyph sitting over the level. _[earned 2026-08-12, React 19.2.8]_
+
+### UG7: A bare-letter shortcut fires while the human is typing, because the existing handler never had to care
+
+The editor's only keyboard handler was Ctrl/Cmd-only (U13), so it could take the key wherever the cursor was and that was the point. The moment a viewport wants `F` for "frame the selection", the same reasoning inverts: an `f` typed into an entity's name must be an `f`. **Fix/policy:** every bare-key handler checks the event target first — `INPUT`, `TEXTAREA`, `SELECT` or `isContentEditable` means the key is not yours. `Space` needs cancelling as well as ignoring when it *is* yours, or it scrolls the page and re-presses whichever button last had focus. _[earned 2026-08-12]_
+
+### UG8: A caption under a canvas changes the size of that canvas, which is a feedback loop as soon as anything is computed from it
+
+The scene viewport is a stage above a caption bar in a flex column, so a caption that wraps to two lines makes the canvas twenty pixels shorter. Harmless for years — until framing, which is computed against the canvas size. The sentence that says "everything is off screen" is on screen at *exactly* the moment the human presses the key that frames the level, so the level gets framed for a panel that is about to grow back the instant the sentence goes away. Two presses of one key, two different zooms.
+
+**Fix/policy:** the caption on a surface whose size is used for anything must not be able to change that size. Switch wrapping off and let the notes ellipsise, with the full text on `title`; keep the sentences short enough that nothing is actually clipped. Shortening the sentence alone is not the fix — it moves the threshold to a different panel width. Worth checking on sight whenever a status line sits inside the same box as something measured: the tell is a message that only appears in the state the measurement is about to change. _[earned 2026-08-12]_
 
 ### UG1: Dockview's layout is computed inside `requestAnimationFrame`, so a non-compositing surface freezes it at 100×100
 
@@ -159,15 +199,16 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store.
 - `kernel-2d/editor/panels/TextureSettings.tsx` — the first editable controls, hand-written, and the worked example of U14. Every one of them goes through the transaction API and none of them knows undo exists.
 - `kernel-2d/editor/shell/useUndoShortcuts.ts` — U13, and the only keyboard handler in the editor.
-- `kernel-2d/editor/panels/ViewportPanel.tsx` — the scene, and the worked example of U10 at its widest: no scene open, opening, gone, unreadable, empty, and a texture it cannot draw are six different sentences.
+- `kernel-2d/editor/panels/ViewportPanel.tsx` — the scene, and the worked example of U10 at its widest: no scene open, opening, gone, unreadable, empty, a texture it cannot draw, everything off screen, and the selected entity off screen are eight different sentences. The last two arrived with the camera, and they *replace* the count rather than joining it — see UG8 for why that is layout as well as prose.
 - `kernel-2d/editor/panels/TexturePanel.tsx` — U15 and the single-texture preview, moved out of the Viewport when the Viewport became the scene.
 - `kernel-2d/editor/panels/TextureOverlay.tsx` — U16. Frame guides, the strip no frame reaches, the pivot marker, and the caption that says in words what the shading says in pixels.
-- `kernel-2d/editor/panels/SceneOverlay.tsx` — U16 again: the selected entity's outline, the crosshair on its position, and the corner the scene's y counts up from.
+- `kernel-2d/editor/panels/SceneOverlay.tsx` — U16 again: the selected entity's outline, the crosshair on its position, wherever the camera has put the corner the scene's y counts up from, and which entities are actually on the canvas.
 - `kernel-2d/editor/panels/HierarchyPanel.tsx` — what is in the open scene, in draw order, and the four actions that change it — every one a transaction and none of them aware undo exists.
 - `kernel-2d/editor/panels/EntityInspector.tsx` — the second inspector, and where a D5 reference is written.
 - `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
 - `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
-- `kernel-2d/editor/shell/scene-view-context.tsx` — U18: the scene renderer, and why two is a bounded number rather than a habit.
+- `kernel-2d/editor/shell/scene-view-context.tsx` — U18 and U19: the scene renderer, why two is a bounded number rather than a habit, one camera per scene for the life of the window, and the three conditions a scene satisfies before it is framed.
+- `kernel-2d/editor/shell/useSceneGestures.ts` — U20: middle-drag, space-drag, wheel-to-zoom, the two framing keys, and the three ways each of them fails silently.
 - `kernel-2d/editor/shell/open-scene.tsx` — which scene is open and the document behind it; one fetch that both decides a `.json` is a scene and puts it in the store.
 - `kernel-2d/editor/shell/scene-assets.tsx` — U9 for a set whose membership changes: every texture a scene refers to, resolved once per window.
 - `kernel-2d/editor/shell/layout-context.tsx` — the handle on the docking layout, and the only thing that reaches it from outside a panel.
@@ -196,7 +237,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Anything editable in a viewport — gizmos, dragging a sprite, click-to-select in the picture, a marquee, dragging a pivot or a frame grid. The Hierarchy and the Inspector are the only ways to change any of it, deliberately.
 - Dragging inside the Hierarchy tree, and nesting. The list is flat and reordering is two buttons.
 - Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it.
-- A camera in the scene viewport. It draws 1:1 from the bottom-left corner, so an entity placed outside the panel is off screen and findable only in the Hierarchy.
+- A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons, and nowhere else.
 - Two scenes open at once. `openScene` is one path.
 - The panel menu and saved layouts (UG4).
 - A keyboard shortcut registry. There is exactly one handler (U13), and one does not need a registry.

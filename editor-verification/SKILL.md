@@ -91,7 +91,19 @@ A zoom test read the fit scale immediately after selecting a texture, got the fi
 
 **Reason:** dockview computes its layout inside `requestAnimationFrame` (`editor-ui` UG1), so anything derived from a panel's size is briefly true and then differently true. A single read is not wrong, it is early — and the failure surfaces several lines away, in the assertion that compares against it, which reads as a bug in the feature. The same shape applies to any value a layout feeds. Tell for the sight test: a test that captures a number into a variable and asserts against it later, where the number depends on an element's size. _[earned 2026-08-11, dockview 8.0.0]_
 
+### V19: A camera is asserted through what the renderer reports, and the load-bearing assertion is that framing is idempotent
+
+A viewport camera is testable without a single pixel comparison, because the renderer reports the camera it drew with and the placement of everything it drew. That makes the acceptance criteria ordinary attribute reads: everything is in frame (count the entities whose reported rectangle intersects the canvas), a drag moved the level (the sprite, the crosshair and the origin marker each moved by the drag delta), a zoom is on the ladder (the reported scale is a whole number or the reciprocal of one), the level's units did not change (the Inspector's fields are unchanged across a zoom), and the view is not in the level (the scene file's bytes *and* mtime are unchanged after panning, per V12).
+
+**The one that earns its place is pressing the frame key twice and asserting nothing changed.** Two independent defects both hide from every other assertion in the list and both surface to a human as a key that misbehaves: a level whose measured extent depends on the zoom it was measured at (`phaser4-runtime` P5), and a caption that appears only when something is off screen and so shrinks the canvas the framing is computed against (`editor-ui` UG8). Each produces a framing that is perfectly correct in isolation. Write the second press. _[earned 2026-08-12]_
+
 ## Gotchas
+
+### W13: A gesture is many events, so reading right after it reads the middle of it
+
+A middle-drag test dispatched a move in eight steps and read the result as soon as anything had changed. It got seven eighths of the drag, and failed by exactly one step — which reads as the pan arithmetic being wrong rather than as the read being early. `await page.mouse.up()` resolves when the input has been dispatched, not when the application has finished responding to all of it.
+
+**Fix/policy:** put the settle inside the gesture helper rather than at each call site, so no test can forget it — poll until the reported value stops moving (V18) as the last line of `dragBy`, `wheelAt` and anything else that produces a stream of events. This is V18's rule with a different cause: there the value was settling because a *layout* was, here because the gesture was still arriving. Same instrument, and the same tell — a number captured into a variable and compared later. _[earned 2026-08-12, Playwright 1.62.1]_
 
 ### W8: Clicking a control and reading the result in the next statement reads the value from before the click
 
@@ -168,7 +180,8 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/editor/hierarchy.spec.ts` — add, delete and reorder, each of them taken back by one press of Ctrl-Z. The behavioural proof that document-level undo covers a tool nobody wrote undo for.
 - `kernel-2d/tests/editor/restore-project.ts` — V14 for every file the editor can write, shared by every spec that changes the sample folder.
 - `kernel-2d/tests/editor/panels.ts` — W12: bringing a tab forward before asserting against it.
-- `kernel-2d/tests/runtime/scene-schema.test.ts` and `kernel-2d/tests/runtime/scene-coordinates.test.ts` — V7 for the scene format, and the y-up arithmetic under the pivot assertion.
+- `kernel-2d/tests/runtime/scene-schema.test.ts` and `kernel-2d/tests/runtime/scene-coordinates.test.ts` — V7 for the scene format, the y-up arithmetic under the pivot assertion, and the camera held to the four properties its acceptance criteria are made of.
+- `kernel-2d/tests/editor/scene-camera.spec.ts` — V19: a camera asserted without a pixel, one test per acceptance criterion, and the settled gesture helpers of W13.
 - `kernel-2d/tests/runtime/frames.test.ts` — the frame geometry, held to "every frame reported is a whole frame, and every pixel outside one is counted".
 - `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
 - `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and the runtime/editor boundary as a test rather than a promise (`editor-kernel` D20).
