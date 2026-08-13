@@ -31,6 +31,10 @@ The file tree is computed per request and written to no file, and it is still de
 
 The `.meta` format is written by the sidecar (for a file the human just dropped in) and by the sample-project generator (for content it authored). Both build their document from the same `defaultMeta` / `defaultImportSettings` functions in the schema module, so "what a fresh document looks like" is defined once. **They do not share id minting, and should not:** the sidecar mints random ids, the generator derives its ids from the file path so re-running it produces byte-identical output. **Reason:** the two differ in what they need from an id — uniqueness versus determinism — and agree on everything a *reader* can observe, because an id is opaque. Sharing the defaults prevents the drift that matters, one writer quietly emitting a different shape; forcing the id minting to be shared would break the generator's re-runnability for no reader's benefit. _[earned 2026-08-11]_
 
+**There are four asset types and only three of them can be minted, which is the part to get right.** `texture`, `audio`, `font` — and **`other`**, for a file the editor has no import settings for at all. The distinction that matters: `other` is **never produced by the extension vocabulary** and so never by the sidecar, which is why `editor-kernel` D21's list of what the service will serve is correctly three and not four. It exists to be *read*, because a content generator has to mark a `.txt` it authored and a file that cannot carry its provenance inside itself needs a `.meta` to carry it (`editor-kernel` G4's marking rule).
+
+So the defaults factory answers for four types and the sidecar reaches it with three. A regeneration that derives the type list from the extension map alone produces a schema that cannot parse a perfectly ordinary generated project — which is how the first parity drill found this. **Where a vocabulary has a member nothing mints, say so where the vocabulary is defined**, or the next reader will prune it as dead. _[earned 2026-08-12]_
+
 ### T6: Ids are validated as non-empty strings, never against a pattern
 
 The convention (16 lowercase hex characters) lives in the function that mints them; the schema requires only a non-empty string. **Reason:** the schema's job is to catch drift between the format's own writers, and every writer goes through the minting function anyway — so a pattern adds nothing there, and costs something real elsewhere. It would turn an id a human typed by hand into a parse failure, and in a format whose whole promise is "read, never regenerated" a parse failure means the editor refusing to open a file it also refuses to fix. _[earned 2026-08-11]_
@@ -102,6 +106,25 @@ Three options, and the reason the middle one wins:
 **Reason, generalised:** consistency between references is worth having, and it is worth *less* than every field being load-bearing. When a new reference cannot honour a convention, write down which half it is missing and why, in the schema, next to the field. That comment is the thing that stops a later session either trusting a dead field or "fixing" the inconsistency at the cost of a migration.
 
 A second, smaller decision in the same file, for the same instinct: **"not chosen yet" is `nullable`, never optional.** An absent key and a key set to `null` would be two spellings of one state, and the editor would have to pick one to write while every reader handled both. _[earned 2026-08-12, Zod 4.4.3]_
+
+### T16: A format owns the function that turns it into the bytes on disk, and the round-trip test goes through that function
+
+Every schema module exports a `serialize…` beside the schema itself — `serializeMeta`, `serializeScene`, `serializePrefab`, `serializeProject` — and it is the only thing anywhere that renders a document as text. The round-trip test is written through it rather than through `JSON.stringify`, so what is proven is that **the text actually written to disk** reads back identical, not that some equivalent text would.
+
+**Reason:** `CLAUDE.md` forbids a second serialization path, and this is the mechanism that makes the ban structural instead of a rule everyone has to remember. Indentation, key order and the trailing newline are all decisions a format makes once; a writer reaching for `JSON.stringify` directly makes them again, differently, and the result is a file that differs from the editor's own output in whitespace only. That costs nothing at parse time and everything in a diff — a folder where re-saving a level rewrites every line is a folder whose history is unreadable, and D3's whole case for text is git-diffability.
+
+Two things that follow, both of which the first parity drill got wrong by not knowing this existed:
+
+1. **The round trip is `parse(serialize(x))`, not `parse(JSON.parse(JSON.stringify(x)))`.** The second form is a weaker test that passes for a kernel whose writers disagree about whitespace, because whitespace is exactly what it throws away before comparing.
+2. **A generated document is serialized the same way as an authored one.** That is what lets the sample generator promise byte-identical output on every run (G4) without owning a second opinion about formatting.
+
+_[earned 2026-08-12, recorded after the first parity drill regenerated four formats without one]_
+
+### T17: The `format` literal is data, so it belongs in the skills where a function name does not
+
+The literals are `kernel2d.asset-meta`, `kernel2d.scene`, `kernel2d.prefab`, `kernel2d.project`, and the served-answer formats spell themselves the same way (`kernel2d.document-view`). Every document on disk carries one (T1), and the service's registry is keyed on them (T13).
+
+**Reason, and the line this draws:** the first parity drill established that the skills carry decisions and reasons but not identifiers, and that this is correct — a regenerating session gets function names from the test suite, which ships alongside (`editor-kernel` D12). A `format` literal is not that kind of name. **It is a value written into every file a human has ever saved**, so a regenerated kernel that spells it differently compiles, passes a suite that was regenerated with it, and cannot open a single existing project. The test for whether an identifier belongs in a skill is therefore not "is it a name" but **"is it on disk in somebody's folder?"** _[earned 2026-08-12]_
 
 ## Gotchas
 

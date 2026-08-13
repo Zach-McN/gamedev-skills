@@ -145,7 +145,9 @@ Four things that make it a real check rather than a reformulation:
 - **Draw order is part of the picture.** Two levels holding the same entities in a different order overlap differently, and a comparison keyed by id alone calls them identical.
 - **The instrument gets its own tests, including both edges of the tolerance.** A comparison that always answers "the same" passes every test written from the happy path. Each way two pictures can differ is a test, and so is "a thousandth of a unit passes, a tenth fails".
 
-**Where it lives.** In `tests/`, because no product code compares itself to an editor — the same line `editor/shell/play-comparison.ts` is on, one layer out. Its home is `kernel-2d/tests/instruments/`, a folder for the suite's own tools, because a pure helper the browser suite imports has to compile in the Node project and its Vitest test cannot sit in the Playwright folder (V15). Instrument and test beside each other; the spec imports the instrument. _[earned 2026-08-12]_
+**Where it lives.** In `tests/`, because no product code compares itself to an editor — the same line `editor/shell/play-comparison.ts` is on, one layer out. Its home is `kernel-2d/tests/instruments/`, a folder for the suite's own tools, because a pure helper the browser suite imports has to compile in the Node project and its Vitest test cannot sit in the Playwright folder (V15). Instrument and test beside each other; the spec imports the instrument.
+
+**It duplicates `play-comparison.ts`'s arithmetic on purpose, and a gardening pass has already confirmed it should stay that way** — the two compile in different TypeScript projects, the only home both could import is `runtime/`, and comparison-against-an-editor in the shipping layer is what D1 exists to prevent. Reasoning in full at `editor-kernel` G3; do not re-derive it. _[earned 2026-08-12, duplication confirmed correct 2026-08-12]_
 
 ### V27: An artefact is proved clean by absence, and absence needs two different instruments
 
