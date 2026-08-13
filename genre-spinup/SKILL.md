@@ -102,9 +102,14 @@ _[earned 2026-08-13, first spin-up]_
 - `gamedev/CLAUDE.md` — the workspace map (S3).
 - `kernel-2d/tests/architecture/boundaries.test.ts` — both boundaries as tests: the runtime/editor one (`editor-kernel` D20), and the repo one that keeps the kernel out of `games/` (SG2).
 
-**Deliberately unbuilt** — each has a named trigger, and building it before the trigger is the seeded-content failure the first parity drill measured (a rule written ahead of its referent goes stale invisibly):
+**Deliberately unbuilt** — each has a named trigger, and building it before the trigger is the seeded-content failure the first parity drill measured (a rule written ahead of its referent goes stale invisibly).
 
-- A `PreToolUse` hook refusing edits to game-content files that lack a `generatedBy` marker. Built **when the first game has human-authored content to protect** — an unexercisable hook can only misfire, and a hook that misfires trains its owner to override it. Still unbuilt after the first spin-up, and the trigger is worth restating now that it is close: `games/tower-defense/` exists but holds no human-authored content, so the hook would still have nothing to guard. It fires the day Zach puts a texture or a level in that folder.
+**An entry here carries a trigger and an intent, and deliberately not an implementation.** That is a correction, applied 2026-08-13 after both entries that fired came with a sketch of the work and both sketches were wrong (SG2). The sketches were not merely inaccurate, they were *misleading in a specific direction*: each was made by pattern-matching the shape of code nobody re-read, so each read as a cost estimate while actually being a guess, and "one line in `boundaries.test.ts`" would have been built as one line that could never have fired. A parked item's job is to make sure the thing is not forgotten and not built early. Sizing it is the job of the session that has the file open.
+
+- A `PreToolUse` hook refusing edits to game-content files that lack a `generatedBy` marker.
+  - **Trigger:** the first time a game folder holds human-authored content — the day Zach puts a texture or a level into `games/tower-defense/`. It has not fired: the folder exists and everything in it is generated.
+  - **Intent:** make "never overwrite human work" structural rather than a rule sessions are trusted to remember. An unexercisable hook can only misfire, and a hook that misfires trains its owner to override it.
+  - **Known constraint, because it is the kind that decides the design:** the marker now lives in three places depending on what the file can hold — inside a JSON document, in the `.meta` beside a binary, in a comment in a source file. Anything checking for it must know all three.
 
 **Three of these fired on 2026-08-13** and have moved into the registers above rather than being deleted, because what they turned out to cost is the part worth keeping:
 
