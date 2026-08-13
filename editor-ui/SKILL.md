@@ -225,6 +225,31 @@ Three things it confirms, each of which was a decision made earlier and is now e
 
 The picker is **not** lifted into a file of its own. There is exactly one thing in the kernel that points at a level; U25's sharing rule ran the other way here, and a shared component built for one owner is a guess about what two would have in common. _[earned 2026-08-12]_
 
+### U29: Renaming and moving are one control, and a destructive control's first press is a sentence
+
+The Assets panel gained a second row under U22's: the selected file's name, the folder it is in, the whole destination path, one button, and a Delete beside it.
+
+**Renaming and moving are one operation with two ways to ask for it.** To the filesystem and to the reference fixup there is no difference — a file that was at one path is now at another — so two rows would imply the answers differ, and the human would have to learn a distinction the editor does not have. One name field, one folder, one path preview, and the *word on the button* changes to say which of the two this will be (`Rename` when only the name moved, `Move` otherwise). Same instinct as U25 and pointed the other way: there, one path question with two buttons because the *contents* differed; here, one path question and one button because nothing does.
+
+**U22's path preview matters more for a file that already exists than for one being made.** Making a file in the wrong place leaves you with a file in the wrong place; moving one leaves you looking for something that used to be findable.
+
+**Delete takes two presses, and the first one is the sentence rather than a confirmation.** It runs the reference walk and says what still points at the file — "knight.png is still used once, in scenes/level-01.json" — and the button becomes *Delete anyway*. Three options were live and the other two are both worse:
+
+- **Refusing while something uses it** breaks the commonest reason to delete an asset, which is that a better version is going in its place, and sends the human back to the file manager — where nothing gets fixed up at all. A tool that refuses the normal case teaches people to work around it.
+- **Deleting silently** is defensible only because the level already says what is missing; it throws away the one moment the answer is cheap and the human is still deciding.
+
+A second press is also what stops Delete being one stray click, so the sentence is shown even when nothing uses the file. **When a destructive control needs a confirmation anyway, spend it on telling them something they did not know.**
+
+Two smaller things worth copying. **Key the whole row on the selected path** rather than clearing four pieces of state when the selection changes — a remount cannot leave somebody else's typed name, refusal or half-pressed Delete under a different file, and it is the same class of bug as UG5 answered structurally. And **do not offer a destination that will be refused**: the folder list leaves out the folder being moved and everything under it, so "a folder cannot be moved inside itself" is a service rule the human never has to be told. _[earned 2026-08-12]_
+
+### U30: A file operation moves what the human is *looking* at, and none of it is undoable
+
+Renaming the open level, or the selected file, has to carry the selection, the open scene and that scene's camera to the new path. All three live outside the document store (U8, U19), so none of it is in a transaction and none of it is reversed by Ctrl-Z — which is exactly right, and is why it has to be done deliberately rather than falling out.
+
+The camera is the one that would have been missed, and its symptom is the confusing one: cameras are keyed by scene path, so a renamed level arrives somewhere nothing has ever been framed and gets framed again. **The level jumps, for a reason that has nothing to do with looking at it**, and "each level remembers where you were looking" quietly stops being true for exactly the levels somebody has been reorganising. A per-scene map keyed on a path needs a rename hook the moment paths can change; it is five lines and there is no test that would have caught its absence.
+
+The exception that proves the rule: **the tab that comes forward is not remapped, because it was never keyed on the path.** Selecting a texture brings the Texture tab forward (U18), and a renamed texture is still a texture, so it does the right thing by itself. Ask of each piece of window state: is it keyed on the path, or on what the thing *is*? Only the first kind needs moving. _[earned 2026-08-12]_
+
 ## Gotchas
 
 ### UG6: React's `onWheel` cannot `preventDefault`, and a middle-button `mousedown` must
@@ -278,7 +303,10 @@ Dockview tabs render a close affordance by default, and the shell has no panel m
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
 
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now.
-- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, and U22: the one control that puts a file in a human's project.
+- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, U22 (the control that puts a file in a human's project) and U29 (the one that renames, moves and deletes one).
+- `kernel-2d/editor/shell/useFileMoves.ts` — the whole of a rename as a gesture: flush, plan, refuse, move, rewrite, report, and U30's remapping of what the human was looking at. The comment on why none of it goes through `edit` is the load-bearing one.
+- `kernel-2d/editor/shell/references.ts` — which documents point at a file, and the same documents with its new path written in. Only `path` moves; `id` never does.
+- `kernel-2d/editor/store/file-disk.ts` — the editor's two file operations, beside `document-disk.ts` and `meta-disk.ts`.
 - `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store. Three document formats have a body of their own now, each reached by what the document says it is.
 - `kernel-2d/editor/panels/ProjectInspector.tsx` — U28: the third inspector body, the startup-level picker that reads a file before it writes a path, and the sentence that says what the current choice resolves to.
 - `kernel-2d/editor/shell/zoom.ts` — what is left of the zoom controls after the ladder moved into the shipping layer (`editor-kernel` D20): stepping, and the wording.
@@ -332,7 +360,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Gizmos for rotate and scale, a marquee, dragging a pivot or a frame grid, and cycling through overlapping sprites with repeated clicks. Position is the one thing a viewport can change; everything else is the Inspector's, deliberately.
 - A grid, rulers, or a settable snap size. A drag lands on whole level units and Alt frees it; nothing is configurable and nothing is drawn.
 - Dragging inside the Hierarchy tree, and nesting. The list is flat and reordering is two buttons.
-- Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it.
+- Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it. The rename control operates on one file for the same reason.
+- Dragging a file inside the Assets tree to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one.
+- Deleting a folder. Renaming and moving take folders; deleting is one file at a time (`editor-kernel` D22).
 - A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons, and nowhere else.
 - Two scenes open at once. `openScene` is one path.
 - The panel menu and saved layouts (UG4).

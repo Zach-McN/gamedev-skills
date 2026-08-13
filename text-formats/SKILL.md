@@ -47,6 +47,19 @@ The convention (16 lowercase hex characters) lives in the function that mints th
 
 `GET /meta` does not return an `AssetMeta`. It returns a small envelope carrying the path asked about, a status, the meta when there is one, and — when there is a file that will not parse — the reason and the file's raw text. **Reason:** the two answers that are not a document (there isn't one; there is one and this editor cannot read it) are the answers a panel most needs to say something useful about, and they have nowhere to live in the document's own schema. Bolting them on by making every field optional would destroy the document schema as a contract. Keep the envelope thin: anything the consumer can derive from the shared vocabulary it already imports (what type an extension is, say) does not belong in it. _[earned 2026-08-11]_
 
+### T18: "This is not one of my documents" and "this is one of mine and it is broken" are different answers, and a served envelope has to carry which
+
+`GET /document` answers `unreadable` for three quite different files: one claiming a format the editor knows that will not parse, one claiming a format it has never heard of, and one that is not JSON at all. The sentences already differed (T13's whole point); the *envelope* did not, so a consumer could only tell them apart by matching on prose.
+
+**It surfaced as a feature that never worked in a real project.** The rename fixup reads every `.json` before it moves anything and refuses if one cannot be read — which is right for a level somebody mangled by hand, and absurd for the placeholder data tables every project has, whose formats do not exist yet. Every rename was refused, naming a file that could not possibly have held a reference.
+
+**The fix is one boolean on the envelope, and getting its definition right is the whole of it.** `foreign` is true only when the file is readable and has **positively said it is not one of this editor's documents** — an unknown `format`, or none. It is false for a file that will not parse *at all*, because a file that says nothing about itself might be one of the editor's own that somebody mangled, and guessing otherwise is the guess that loses work. Three cases, one flag, and the flag is computed where the registry is rather than by each consumer.
+
+Two rules that generalise past this field:
+
+- **A served answer's *status* enum should not be widened for one consumer.** Four other readers wanted "unreadable, and here is the sentence"; adding a fourth status would have made all of them handle a case they do not care about. A field they can ignore is the cheaper shape (T8's thin-envelope rule, pointed at a distinction rather than at data).
+- **Name the flag for the fact, not for the policy.** It was first written as `recognised`, which reads as "I know this format" — and then has to be *true* for a file that is not JSON, which nobody would guess. `foreign` states what the file did, and the awkward case stops being awkward. If a name forces a comment explaining why an obvious case is backwards, the name is wrong. _[earned 2026-08-12]_
+
 ### T9: A format the editor rewrites is built from loose objects, so the document it holds *is* the document from disk
 
 Every object in `AssetMetaSchema` is `z.looseObject`, at every level, so keys the schema does not model survive the parse.
@@ -144,7 +157,8 @@ Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify
 - `kernel-2d/tests/sidecar/tree-schema.test.ts` — the round-trip test every subsequent format copies.
 - `kernel-2d/runtime/formats/meta-schema.ts` — the `.meta` format, and the worked example of T5–T7, T9 and T10: the discriminated union on `type`, the defaults factory every writer shares, the extension→type vocabulary, and why it sits in the layer that ships.
 - `kernel-2d/sidecar/meta-view-schema.ts` — T8: the answer *about* a `.meta`, as distinct from the `.meta` itself.
-- `kernel-2d/runtime/formats/scene-schema.ts` — the scene format *and* the prefab format, and the worked example of T12 and T14: the flat ordered entity list, the transform as a field rather than a component, the open component map, the registry beside it, and the reference between the two documents.
+- `kernel-2d/runtime/formats/scene-schema.ts` — the scene format *and* the prefab format, and the worked example of T12 and T14: the flat ordered entity list, the transform as a field rather than a component, the open component map, the registry beside it, `COMPONENT_REFERENCE_FIELDS` (where a reference lives, as a fact about the format), and the reference between the two documents.
+- `kernel-2d/sidecar/file-change-schema.ts` — T4 for an answer about *what was done* rather than about what is there: what a move or a delete reports, and why it has no spelling for a refusal.
 - `kernel-2d/runtime/formats/project-schema.ts` — T15: the game's own settings, one field that works, and the reference that is a path alone with the reason written beside it.
 - `kernel-2d/tests/runtime/project-schema.test.ts` — the round trip, the hand-added key that survives it, and the four refusals.
 - `kernel-2d/scripts/export/manifest-schema.ts` — a format that describes a *folder* rather than a document: what an export wrote, addressed to the next export. The worked example of T4 for build output.

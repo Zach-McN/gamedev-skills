@@ -164,7 +164,37 @@ Three rules that came out of building it:
 
 **And prove the absence from the page as well as from the disk.** The exported page is asserted to have no assets panel, no inspector, no docking container, and to have made no request to the editor's service — watched with `page.on('request')` from outside the browser rather than from inside the page. That is the observable form of the claim, in the same vocabulary the human used. _[earned 2026-08-12]_
 
+### V28: A move is proved by what did *not* change, and the assertion that carries it is the id
+
+Renaming a file from the editor is testable without a pixel, and almost none of the assertions are about the screen.
+
+**The one that carries the feature is that the reference's `id` is unchanged while its `path` is not.** A rename takes the `.meta` with the file, so the stable id at the new path is still the one every level recorded — an implementation that "fixed up" the id as well would draw the same picture, pass every screen assertion, and have quietly replaced the only thing that can notice a file being swapped. Assert the level's recorded id equals the id in the `.meta` at the *new* path, so the two are compared rather than each checked against a constant.
+
+The rest of the file, in the order they earn their place:
+
+- **Refusals first, each against bytes *and* timestamp** (V12) — and for a move there is a second half a create never had: **the source is still there too.** A move that half happened is a file destroyed rather than merely not moved.
+- **The settings a human set survive**: write a tuned pivot and a grid slice, move the file, assert the whole `.meta` is equal. "The id survived" and "the settings survived" are the same mechanism and different promises.
+- **The picture never breaks**: the level still draws every entity, and there is no problem sentence. Cheap, and it is the human's own acceptance criterion.
+- **The neighbour that should not have moved** (V22): a document that referenced nothing is not rewritten at all.
+- **The command downstream stops refusing.** The whole point of the fixup is that `npm run export` no longer names a picture it cannot find, so run the real command as a process after the rename (V8) and assert it does not refuse. It is the only assertion that checks the *reason the feature exists* rather than its mechanism.
+
+**And the live-watcher test is not optional.** The ordering that keeps a rename's id — sidecar first, file second, with the service ignoring its own writes — can only fail against a real watcher, because there is nothing to lose the race to without one. A test against the functions alone passes with the rule removed entirely. Same shape as V2: the property under test belongs to the system, not to the module. _[earned 2026-08-12]_
+
 ## Gotchas
+
+### W18: A test that acts on a file and then asserts on a panel has to wait for the *editor*, and "the file changed" is not that
+
+W10 says: after touching a file the editor is watching, the next assertion must be about the editor. A rename made *by* the editor looks like it escapes that — the editor did it, so surely it knows — and it does not.
+
+A spec renamed a texture, polled until the level file on disk held the new path, brought the Viewport tab forward and asserted the level still drew five entities. It drew four, for twenty seconds. The picture had not failed to recover: **selecting a texture brings the Texture tab forward (`editor-ui` U18), whether a file is a texture cannot be answered until the folder listing catches up a few hundred milliseconds later, and clicking Viewport inside that window means the Texture tab takes it straight back.** The assertion was then against a panel that had been unmounted mid-rename, frozen at whatever it last reported.
+
+It cost an hour, and most of that was spent believing the product was broken — the failure says "4 entities drawn" and stays there, which is a far more alarming sentence than "you are looking at a stale attribute".
+
+**Fix/policy:**
+
+- **Wait for something the editor could only know if its folder listing had caught up** — the new path's row appearing in the Assets tree — and only then claim a tab. The file being right on disk proves the *service* did its job, which was never in doubt.
+- **Two diagnostic moves that shortened this and would shorten the next one.** Give the failing assertion a much longer timeout first: "still wrong after twenty seconds" and "wrong for two hundred milliseconds" are different bugs and cost one run to tell apart. Then dump the panel's own sentence rather than an attribute — the caption named the file and said "not in the project folder", which pointed straight at the folder listing.
+- **Do not reach for the embedded preview to debug a docking layout.** It is not compositing, so dockview never lays out and tab clicks do nothing (UG1/W4) — the same trap, one layer along, and it will happily eat the time the longer timeout just saved. _[earned 2026-08-12, dockview 8.0.0, Playwright 1.62.1]_
 
 ### W15: A "this must not appear" search over unminified output collides with the engine's own prose
 
@@ -268,6 +298,8 @@ V14's snapshot-and-restore walks the sample folder for the extensions the editor
 
 **Fix/policy:** read the bytes, delete, assert, write them back in a `finally`. Do not widen the shared restore to cover binaries instead — that list is the statement of what the editor is permitted to write, and quietly turning it into "everything a test might touch" costs the reader the one place that answer is written down. _[earned 2026-08-12]_
 
+**Sharpened once the editor could move files: a restore that puts files back *by path* cannot survive a folder that moved.** The shared snapshot recreates each `.meta` and `.json` at the path it had, and `writeFileSync` throws when the folder it names is no longer there. So a test that renames a folder must **rename it back**, in a `finally`, before the shared restore runs — which also brings every binary inside it back for free. The tell to watch for: a shared restore that assumes the *shape* of the folder is fixed, in a suite that has just gained the ability to change it. _[earned 2026-08-12]_
+
 ### W12: A tab sharing a dockview group is not on screen, so a spec must bring it forward before asserting anything
 
 The Texture tab sits behind the Viewport in the same group. Every assertion about it — the canvas being visible, a caption, an overlay — is against a panel that is not rendering until something activates it. Selecting a texture does that in the product; a spec asserting the empty state *before* selecting anything has to click the tab itself.
@@ -320,6 +352,10 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/runtime/drawn-in-scene.test.ts` — the projection V26 rests on, including the one test that distinguishes the drawn camera from the requested one.
 - `kernel-2d/tests/editor/export.spec.ts` — V26 and V27 end to end: a served folder that plays the game, checked against play mode, moved somewhere else, opened off the disk, and proved to hold no editor.
 - `kernel-2d/tests/editor/project-settings.spec.ts` — choosing the starting level, in the human's units: it reaches the file, survives a reload, refuses a prefab, and Ctrl-Z takes it back.
+- `kernel-2d/tests/sidecar/file-operations.test.ts` — V28's refusals half: the move and the delete held to their edges against a real filesystem, every refusal checked against bytes, timestamp *and* the source still being there.
+- `kernel-2d/tests/sidecar/meta-generation.test.ts` — where the ordering rule is actually provable: a rename through the running service, against a live watcher, keeping its id.
+- `kernel-2d/tests/editor/rename.spec.ts` — V28 end to end, W14's binary restore, and W18's wait-for-the-editor rule; ends by running the real export command to show the refusal this feature exists to remove is gone.
+- `kernel-2d/tests/shell/references.test.ts` — the rewrite as arithmetic: the id untouched, a folder prefix, a hand-added key surviving, and a document that referenced nothing coming back as nothing.
 - `kernel-2d/tests/editor/test-export.ts` — V8 extended: the exported game the browser suite opens, built by running the real command.
 
 ### V21: A create is tested from the side where it refuses, and a picture waits for everything it is a picture of
