@@ -54,7 +54,28 @@ Four decisions the shipped side had to make that the editor never had to, each w
 
 **And still no third `Phaser.Game`.** P2's amendment said a new game is warranted by a new surface and never by a new mode; an exported page is a new *document*, which gets its own game because it is its own window, and that is the same rule rather than an exception to it. Nothing about the renderer changed to make this work. _[earned 2026-08-12, Phaser 4.1.0]_
 
+### P7: The engine's ticker is the kernel's only clock, and the kernel spends it in fixed steps
+
+A running level's time comes from `Phaser.Scene.update(time, delta)` and from nowhere else. The renderer hands that out as `SceneView.onFrame(tick) => stop` (`kernel-2d/runtime/scene/scene-view.ts`); the accumulator that turns milliseconds into whole steps has no Phaser import at all (`kernel-2d/runtime/game/loop.ts`).
+
+**Reason: two clocks are two answers to "how much time passed", and they disagree exactly when it is hardest to notice.** A `requestAnimationFrame` of the kernel's own would keep running while the engine's `TimeStep` is asleep, so a backgrounded tab would accumulate an hour of simulation against a renderer that drew none of it. Taking the engine's means a hidden tab pauses the game, and nobody wrote that.
+
+Four specifics, each measured against 4.1.0 rather than assumed:
+
+1. **`TimeStep.delta` is already smoothed and capped** — the types say so — so it feeds an accumulator without being tidied first. `rawDelta` is the un-smoothed one and is the wrong input here: the smoothing exists to stop a single hitch reading as a spike, which is the same thing the step ceiling is for one layer down.
+2. **The scene's `update` runs whether or not anything subscribed**, so "nothing moves in edit mode" is a *set with nothing in it* rather than a flag. There is no state to get wrong and no mode to leave switched on.
+3. **Copy the subscriber set before walking it.** A level that stops itself unsubscribes from inside the callback being iterated, which drops the *next* subscriber in the same pass. One `[...set]`, and the failure it prevents is another running level going quiet for no visible reason.
+4. **Redrawing a running level is `Image.setPosition`/`setRotation` on objects that already exist**, through the entity layer's `sync`. No texture is fetched, nothing is re-registered, and nothing is rebuilt — the same property P3 relies on for import settings, arriving from the other direction. A per-frame path that went through `show()` would re-fetch every texture sixty times a second.
+
+**And still no new `Phaser.Game`.** P2's amendment said a new game is warranted by a new surface and never by a new mode; a clock is not even a mode. The editor's Play and an exported page run the same `runLevel` over the same renderer. _[earned 2026-08-13, Phaser 4.1.0]_
+
 ## Gotchas
+
+### G9: `update` **is** declared on `Phaser.Scene`, so it must carry `override` — the exact opposite of `create`
+
+G4 says `create` must *not* carry `override`, because the v4 types do not declare it. `update(time: number, delta: number)` **is** declared on `Scene`, so under `noImplicitOverride` the same class needs `override update(…)` and plain `create()`, and writing them the same way is an error either way round.
+
+**Fix/policy:** check the declaration rather than reasoning from "they are both lifecycle hooks" — they are not the same kind of thing, and the compiler's message names the keyword rather than the cause in both directions, so it reads as a typo in the method name. The two live side by side in `kernel-2d/runtime/scene/scene-view.ts` with a comment saying why they differ; that is the cheapest place to check. _[earned 2026-08-13, Phaser 4.1.0, TypeScript 5.9.3]_
 
 ### G1: v3 contamination — AI-generated Phaser code defaults to Phaser 3
 
@@ -125,5 +146,8 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/runtime/scene/entity-layer.ts` — display objects kept in step with a list of entities by id, updated in place rather than rebuilt, and the `getBounds()` report of G8.
 - `kernel-2d/runtime/scene/coordinates.ts` — the y-up-to-y-down flip, the rotation sign, the camera, and the pixel-grid snap of P5 — with no Phaser import, so every one of them is testable without a browser.
 - `kernel-2d/runtime/scene/load-scene.ts` — what feeds the renderer when the editor is not there to. Imports Phaser nowhere and takes its two types from `scene-request.ts`, so it runs and is tested in plain Node — and, since the export command, is *called* from plain Node.
-- `kernel-2d/runtime/web/start-game.ts` — P6: the whole of what a shipped game does. One renderer, a `fetch` reader, a fit on the shared ladder, and the report it leaves on the page.
+- `kernel-2d/runtime/web/start-game.ts` — P6: the whole of what a shipped game does. One renderer, a `fetch` reader, a fit on the shared ladder, the same `runLevel` the editor's Play uses, and the report it leaves on the page.
+- `kernel-2d/runtime/game/loop.ts` — P7's fixed step: the accumulator, the ceiling, and the reasons, with no Phaser in it so a test can drive it by hand.
+- `kernel-2d/runtime/game/system.ts` — what a system is, which is the smallest interface in the kernel and is meant to stay that way.
+- `kernel-2d/runtime/game/run-level.ts` — the transient copy of a level and the glue around it (`editor-kernel` D27). Takes its frame source and its draw as plain functions, so it runs in Node.
 - `kernel-2d/runtime/scene/scale-steps.ts` — the zoom ladder, which is in the shipping layer because a shipped game frames its own level for the same pixel-art reason the editor does.

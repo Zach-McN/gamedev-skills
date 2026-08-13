@@ -124,6 +124,14 @@ Four things that make it a real check rather than a tautology:
 
 _[earned 2026-08-12]_
 
+**Amended once the runtime had a clock: it is a check on the *first frame*, and the amendment is a pattern rather than a detail of this feature.** A running level moves and an editing view does not, so a check that kept comparing them would go red at the moment the product started working. Three parts, and the third generalises:
+
+1. **The subject is the frame the level started on**, published under the name the hook already had (`data-scene-units`), with where the level has got to since beside it under a new one (`data-play-units`). Same on the exported side (`data-game-units` / `data-game-units-now`). **Do not repoint an existing hook at the moving value** — every test that compares two surfaces is written against the old name, and it would quietly start comparing two unrelated instants.
+2. **The ordering is enforced, not timed.** The clock is refused permission to start until the renderer has drawn the running level and the baseline exists. Left to a race, the check compares against a level that has already moved by a fraction — which fails as a real-looking sub-pixel difference about as often as it passes.
+3. **When a continuous check has to become a point-in-time one, ask what it was ever able to detect.** Here: a disagreement between two *loaders*, all of which is visible before anything moves. So the narrower check is worth what the old one was, and writing that down is what stops a later session "restoring" it.
+
+The narrowing needs a companion or it hides a regression: **a check that something does not move must be paired with one that something does.** There is now an assertion that after a quarter-turn exactly one entity's drawn rectangle changed — a runner that moves everything and a runner that moves nothing both fail it, and the second is precisely what "we drew the level once and called it running" looks like. _[earned 2026-08-13]_
+
 ### V25: "Nothing wrote to my file" is asserted by reading the bytes either side, with the destructive controls pressed in between
 
 Play mode's promise is that a level can be run and stopped with the file untouched. The test snapshots every file the editor is able to write, plays, presses Add and Delete with `force` and Ctrl-Z, stops, waits past the autosave debounce, and asserts the whole snapshot is byte-identical.
@@ -131,6 +139,12 @@ Play mode's promise is that a level can be run and stopped with the file untouch
 Three parts, each load-bearing. **`force` on the clicks**, because an ordinary click on an `inert` control times out and proves nothing — the assertion is about what the press *did*, not about whether it was possible. **The wait past the debounce**, because a write that was scheduled and not yet flushed is exactly the failure being hunted, and a check that runs before the timer would miss it every time. And **the whole snapshot rather than the level**, because the interesting bug is a mode that writes somewhere nobody thought to look — which is also the file nobody would have listed. The same snapshot covers "nothing about play mode is recorded anywhere" for free.
 
 **Reason:** it is the only formulation that tests the guarantee rather than the mechanism. Asserting that a store flag is set tests the flag; asserting the buttons are disabled tests the buttons. Neither would notice a third path to disk. _[earned 2026-08-12]_
+
+**Extended when levels started moving, and the extension is what the test was always supposed to be about.** As written above it played a level that stood perfectly still — so it was a test of the *editor's controls* being out of reach, and it would have passed unchanged against a runner that wrote a hundred transforms a second into the human's file. It now plays a level whose entities genuinely move, waits until at least a hundred and twenty fixed steps have gone by, and only then presses anything. The claim and the test finally match: *the thing being mutated sixty times a second is a copy* (`editor-kernel` D27).
+
+**And the snapshot now carries the modification time as well as the bytes** (V12, which said this from the beginning and was not being followed here). A write of identical contents leaves the bytes equal and the timestamp moved, and "the editor rewrote my level with exactly what was already in it" is still a promise broken — it churns git, and it is the shape this bug would most likely take, because the copy and the original start out identical.
+
+The general form, worth more than either detail: **a test of "X cannot happen" is only as good as the run-up to it.** Ask what the system was actually doing while the test watched. If the answer is "nothing", the test is about the guard and not about the hazard. _[earned 2026-08-13]_
 
 ### V26: Two pictures that cannot share a canvas are compared in the subject's own units
 
@@ -181,6 +195,14 @@ The rest of the file, in the order they earn their place:
 **And the live-watcher test is not optional.** The ordering that keeps a rename's id — sidecar first, file second, with the service ignoring its own writes — can only fail against a real watcher, because there is nothing to lose the race to without one. A test against the functions alone passes with the rule removed entirely. Same shape as V2: the property under test belongs to the system, not to the module. _[earned 2026-08-12]_
 
 ## Gotchas
+
+### W19: A fixed timestep whose size is not exactly representable makes `STEP * n` fewer than `n` steps
+
+`STEP_MS` is `1000 / 60`, which is `16.666666666666668`. `STEP_MS * 3` is exactly `50` — **less** than three of those — so a test that hands the loop `STEP_MS * 3` and expects three steps gets two. The accumulator is right; the arithmetic that built the frame is what is wrong, and nothing about the failure says so. It reads as an off-by-one in the loop, which is the file you then go and stare at.
+
+**Fix/policy:** a test that asserts an exact step count gives the loop **a step size of its own, in whole milliseconds** — `createLoop({ stepMs: 10 })` and a frame of `30`. That is not avoiding the real value out of squeamishness: the property being tested is "three steps' worth of time buys three steps", and expressing the frame as a multiple of an inexact constant tests the constant's binary representation instead. Keep `STEP_MS` for single frames (one of them is exactly one step, since it is the same value subtracted) and for assertions that are about ranges rather than counts.
+
+The general form: **whenever a test builds an input by multiplying a constant the product also divides by, check the constant is exact first.** _[earned 2026-08-13]_
 
 ### W18: A test that acts on a file and then asserts on a panel has to wait for the *editor*, and "the file changed" is not that
 

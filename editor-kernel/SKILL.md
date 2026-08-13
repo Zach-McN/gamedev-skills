@@ -39,6 +39,15 @@ Three things it cost, none of them visible from the decision as written:
 
 _[earned 2026-08-12]_
 
+**Narrowed by time passing, and the narrowing is the finding: the check is now about one frame, and it is worth *more* rather than less.** Once the runtime had a clock (D27), the running level and the editing view diverge a sixtieth of a second after Play — on purpose, because one of them is playing. A comparison left running would report the game working as a fault. So the picture the running level is checked against is the frame it started on, and nothing else.
+
+Two things fall out that are worth having in advance:
+
+1. **Everything the check was ever able to catch is visible on that frame.** It was only ever a check on the two *loaders* — the editor's resolution of a level against the runtime's — and a disagreement about what a file contains is there before anything moves. What it can no longer catch is a system that is wrong, which it never could. **When a continuous check has to become a point-in-time one, ask what it was actually able to detect; usually the answer is "all of it, at the start".**
+2. **The ordering has to be mechanical, not hopeful.** The clock is refused permission to start until the renderer has drawn the running level and the comparison has a picture to be about. Left to timing, the first step sometimes lands before the baseline is taken and the check fails by a fraction — or passes, which is worse.
+
+The caption changed with it, and captions are where this kind of narrowing leaks: "Drawn exactly as the editing view had it" became "**Started** exactly as the editing view had it". A sentence that was true of a static picture and is false of a moving one is the cheapest possible lie for a tool to tell. _[earned 2026-08-13]_
+
 ### D26: What the runtime cannot do for itself arrives as an argument, and the editor's version is an adapter
 
 The scene loader takes a `ProjectReader`: read one JSON file by project-relative path, and answer with a token that changes when an asset's bytes do. The editor answers out of the development service (`kernel-2d/editor/shell/project-reader.ts`); a shipped game answers with `fetch` and a build number.
@@ -59,6 +68,29 @@ Four things learned building it:
 3. **A seam whose consumers span both TypeScript projects constrains what the module may import.** See D16's third paragraph — this is where that bit.
 
 _[earned 2026-08-12]_
+
+### D27: A running level is a transient copy the runtime drives; the editor starts it, stops it, and describes it
+
+Time arrived. `kernel-2d/runtime/game/` holds the clock (`loop.ts`), what a system is (`system.ts`), and the thing that puts them together (`run-level.ts`). Pressing Play in the editor and opening an exported folder both call the same `runLevel`, with the same systems, over a **deep copy** of the level that was just read from disk. The editor's whole part is `kernel-2d/editor/shell/running-level.ts`: start it, stop it, and repeat what it says.
+
+**The copy is the whole design, and one line of it does the work of three guarantees.** Systems mutate entities sixty times a second; the entities they mutate were `JSON.parse(JSON.stringify(…))`'d when the run began. So:
+
+- **Stop is free and exact**, because nothing was ever changed — there is no level to restore. The editor's own resolution of the same level has been maintained behind the running picture the whole time (that was already true of play mode; time did not change it).
+- **"A running level writes nothing" stops being a property of the editor's controls and becomes a property of the architecture.** The old test pressed Add and Delete against `inert` buttons and checked the bytes; that tested the *editor*. The version that means something plays a level whose entities actually move and then checks the bytes and the timestamps — and the only reason it passes is the copy.
+- **Undo cannot see it**, for the same reason it cannot see the camera: the running level is not in the document store and never was.
+
+Ask it of anything the runtime is given permission to mutate: **is the thing being mutated an object anything else holds?** A shallow copy of the entity list passes every test that counts entities and moves the editor's own level on the first step.
+
+**Four things settled building it, each with an obvious wrong answer.**
+
+1. **The step is fixed, and the reason that survives is testability rather than physics.** 1/60s, accumulated, with a ceiling of five steps per frame. Determinism and not-exploding-after-a-background-tab are the stated reasons and they are real, but the one that pays every day is this: sixty steps is one second *whatever the frame rate*, so a system's arithmetic is asserted on a number instead of a tolerance, by a test that hands the loop frames and never waits for one. Time the ceiling discards is **dropped, not carried** — carrying it is the spiral where every frame after a hitch runs the maximum and the level is in slow motion until it catches up.
+2. **One tick source, and it is the engine's.** The loop starts no `requestAnimationFrame`; the renderer hands out the Phaser scene's own `update(time, delta)` as `SceneView.onFrame`. A second timing source is a second answer to "how much time passed", and the two diverge the first time a browser throttles a background tab. Two things come free: the engine's delta is already smoothed and capped, and a hidden tab stops the simulation without anybody writing that.
+3. **Drawing a running level must not go through the editor's state.** The runner calls `SceneView.redraw(entities)` — synchronous, fetches nothing — straight to the canvas, and the React store is told *ten* times a second rather than sixty. **The editor describes a running level; it does not drive one.** The version that pushed every frame into React is sixty renders a second of a panel whose entire job is to put a caption under a picture somebody else drew.
+4. **The renderer's per-frame hands are handed out raw rather than wrapped in something that runs a level.** The scene-view context exposes `redraw` and `onFrame` and knows nothing about systems, because running a level is not the editor's job — the loop ships (D1). The tell that this is the right way round: `kernel-2d/runtime/web/start-game.ts` uses exactly the same two methods and imports nothing from the editor to do it.
+
+**What it cost, stated plainly: the kernel now ships one gameplay component.** `spin` is in `COMPONENT_SCHEMAS` and `runtime/game/systems/spin.ts` implements it, ahead of any game and against `genre-spinup` S1's usual direction. That was deliberate — a seam with no consumer is a seam shaped against an imagined one — and the amendment, with the trigger for taking it back out, lives in S1.
+
+**Loading a game folder's own code is parked, by name.** The runner takes its systems as an argument, so the seam is *shaped*; what does not exist is a way to compile a game folder's TypeScript into both the editor's dev server and an export, and a way for a level to say which systems it wants. Do not invent either in the kernel — the first game defines both, and it is the only thing that can. _[earned 2026-08-13]_
 
 ### D13: Export targets are kernel-level, one command each
 
@@ -497,6 +529,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/file-change-schema.ts` — what a move or a delete answers with, and why refusal has no spelling in it.
 - `kernel-2d/editor/shell/useFileMoves.ts` — the fixup as a gesture: flush, plan, refuse before anything moves, rename, rewrite, report. The comment on why none of it goes through `edit` is D7's newest line.
 - `kernel-2d/editor/shell/references.ts` — D5's fixup: which documents point at a file, and the same documents with its new path in. `path` moves, `id` never does.
+- `kernel-2d/runtime/game/run-level.ts` — D27 in one file: the transient copy, what a run is told and what it tells back, and the reason the copy is deep. Read this before changing anything about what a running level may touch.
+- `kernel-2d/runtime/game/loop.ts` — the timing policy: the fixed step, the ceiling, and what happens to the time the ceiling discards.
+- `kernel-2d/runtime/game/system.ts` — the whole of what a system is. Deliberately the smallest interface in the kernel; the pressure to grow it should be resisted until a game applies it.
+- `kernel-2d/editor/shell/running-level.ts` — the editor's entire part in a running level, and the ordering that makes the play comparison mean something.
 - `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema`: the flat entity list, the transform, the open component map, and the registry of components the kernel knows. Owned by `text-formats`.
 - `kernel-2d/runtime/formats/prefab-schema.ts` — `PrefabSchema` and the resolution of D25. Imports the scene's registry and is never imported back, which is the whole of why these are two files (T14).
 - `kernel-2d/editor/shell/scene-prefabs.tsx` — D25 as built: which prefabs a level points at, read into the store, merged by the format's own function, and the three things that can be wrong with a reference.
