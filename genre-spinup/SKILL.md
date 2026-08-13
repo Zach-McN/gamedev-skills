@@ -60,6 +60,20 @@ Fired 2026-08-13 by the first spin-up, which is the trigger this was parked on: 
 
 **The skills junction goes at the root *and* stays in the kernel.** `gamedev-skills` is junctioned at `gamedev/.claude/skills` and at `kernel-2d/.claude/skills`. The cost is real and was accepted deliberately: a session opened at the root discovers all seven skills twice, once workspace-wide and once scoped to `kernel-2d/`. The alternative — one junction at the root — means `kernel-2d` opened directly, which is how most kernel sessions start, loads no skills at all. Duplicate discovery is noise; no discovery is the paradigm not working. _[earned 2026-08-13, first spin-up]_
 
+### S4: The first game's own code is what finally lets the kernel's scaffolding leave, and the swap is a demotion rather than a deletion
+
+S1's exception let the kernel ship one system, `spin`, on four conditions, the fourth being that its removal be named and cheap. The day arrived on 2026-08-13, and the move that made it cheap is worth recording because it is not the obvious one.
+
+**The obvious move is to delete the demo. The right move was to demote it.** `spin` stayed exactly where it was; what changed is that the kernel stopped *running* it. `BUILT_IN_SYSTEMS` went from being what every level ran to being a menu nothing reads, and the sample project's own `src/systems/index.ts` imports `spinSystem` by name and lists it alongside a system of its own. The health icon still turns — because content asks for it, not because the engine imposes it.
+
+Three things fall out, and the third is the one to carry forward:
+
+1. **Removability became checkable rather than promised.** Emptying `BUILT_IN_SYSTEMS` breaks exactly one test — the one asserting it contains `spin` — and every browser test still passes, health icon included. That is condition 4 satisfied by running it rather than by arguing it.
+2. **The sample project became the seam's real consumer**, which is what S1's condition 3 wanted all along. The browser suite points at the sample, so the mechanism is exercised end to end by the same content a human opens, through the real generator rather than a test-only file.
+3. **A demonstration leaves in two steps, not one.** First it stops being load-bearing; then it is deleted. Doing both at once means the deletion and the rewiring fail together and neither is diagnosable. The actual deletion — the system, its component in the scene format, its Inspector field, the sample's use of it — is a separate session with nothing left depending on it.
+
+**What it cost against the estimate.** The parked item named three sub-decisions and they were the right three; none turned out to be a trap. The unbudgeted work was elsewhere and in two places: the generator needed a third marking mode, because a `.ts` file can carry `generatedBy` neither as JSON nor in a `.meta` beside it without the asset pipeline annotating something that is not an asset; and the dev server does not watch a folder outside its root, which fails as *silence* (`editor-kernel` G14). Both are the same shape — **the mechanism was fine and the things around it had assumed every file was content.** _[earned 2026-08-13, first game code]_
+
 ## Gotchas
 
 ### SG1: A game folder is a git repo, so the Assets panel shows the human tooling files
@@ -90,16 +104,10 @@ _[earned 2026-08-13, first spin-up]_
 
 **Deliberately unbuilt** — each has a named trigger, and building it before the trigger is the seeded-content failure the first parity drill measured (a rule written ahead of its referent goes stale invisibly):
 
-- **Loading a game folder's `src/` so it can supply systems.** Parked deliberately on 2026-08-13, when the update loop landed, and it is the **first thing the first game session should take up** — everything else on this list waits for a genre spec; this waits for nothing but a decision. What exists already: `runLevel` takes its systems as an argument, so the seam is shaped, and `BUILT_IN_SYSTEMS` is the list the editor and an export both start from. What does not exist, and what has to be decided rather than guessed:
-  1. **How a game folder's TypeScript is compiled into both surfaces.** The editor is a Vite dev server rooted in `kernel-2d`; an export is a bundle produced by the export command. A game's `src/` sits in a folder neither of them currently reaches, and the answer has to be one answer — two build paths is the shipped game and the editor's Play running different code, which is D2's failure with a new fuse.
-  2. **How a level says which systems it wants** — or whether it does not, and a project runs all of its own. The second is smaller and is probably right first; it is a decision because per-level system lists are the sort of thing that is very hard to take back out.
-  3. **What happens when that code changes while the editor is open.** Everything else in this kernel reloads within the second (D18/D19). Code has no obvious equivalent, and "press Play again" may well be the honest answer — but it should be an answer somebody chose.
-
-  The reason it was parked rather than half-built: it is a build-system question wearing a runtime question's clothes, and the shape of the answer depends on what the first game's folder actually looks like. Building it against an imagined game folder is precisely S1.
-
 - A `PreToolUse` hook refusing edits to game-content files that lack a `generatedBy` marker. Built **when the first game has human-authored content to protect** — an unexercisable hook can only misfire, and a hook that misfires trains its owner to override it. Still unbuilt after the first spin-up, and the trigger is worth restating now that it is close: `games/tower-defense/` exists but holds no human-authored content, so the hook would still have nothing to guard. It fires the day Zach puts a texture or a level in that folder.
 
-**Two of these fired on 2026-08-13** and have moved into the registers above rather than being deleted, because what they turned out to cost is the part worth keeping:
+**Three of these fired on 2026-08-13** and have moved into the registers above rather than being deleted, because what they turned out to cost is the part worth keeping:
 
 - The boundary test → Contracts, and SG2 for how the estimate was wrong.
 - The workspace-root `CLAUDE.md` → S3.
+- **Loading a game folder's `src/` → `editor-kernel` D28**, which is where it belongs: it turned out to be an architecture decision about the kernel rather than a fact about spinning genres up. All three of its named sub-decisions were answered rather than guessed — one plugin for both surfaces, a project running all of its own systems with no per-level list, and Play re-reading the code with no page reload. S4 records what the *shape* of the answer cost, which is this skill's business.

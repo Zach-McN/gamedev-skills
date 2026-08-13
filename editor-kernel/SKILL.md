@@ -90,7 +90,24 @@ Ask it of anything the runtime is given permission to mutate: **is the thing bei
 
 **What it cost, stated plainly: the kernel now ships one gameplay component.** `spin` is in `COMPONENT_SCHEMAS` and `runtime/game/systems/spin.ts` implements it, ahead of any game and against `genre-spinup` S1's usual direction. That was deliberate — a seam with no consumer is a seam shaped against an imagined one — and the amendment, with the trigger for taking it back out, lives in S1.
 
-**Loading a game folder's own code is parked, by name.** The runner takes its systems as an argument, so the seam is *shaped*; what does not exist is a way to compile a game folder's TypeScript into both the editor's dev server and an export, and a way for a level to say which systems it wants. Do not invent either in the kernel — the first game defines both, and it is the only thing that can. _[earned 2026-08-13]_
+**Loading a game folder's own code was parked, by name, and is now D28.** _[earned 2026-08-13]_
+
+### D28: A game folder's code reaches both surfaces through one Vite plugin, and the kernel runs nothing a project has not listed
+
+`kernel-2d/scripts/game-code.ts`. The editor's dev server and the export's `vite build` construct the *same* plugin with the project path each already knows, and it provides two things: an alias `kernel-2d/runtime` so game code can name the kernel, and a virtual module `virtual:game-systems` re-exporting `<project>/src/systems/index.ts`.
+
+**One plugin is the whole design, and the reason is D2's with a new fuse.** Two compile paths would be the editor's Play and the shipped game running different code — the failure D2 exists to prevent, arrived at through the build system instead of through an import. Anything that makes the two paths *look* alike while being separately maintained is the same bug with more steps.
+
+**Four things settled, and the wrong answer was available for each.**
+
+1. **A project runs all of its own systems; a level does not say which it wants.** A field in the scene format naming systems is a change to every level ever saved and — the part that decided it — very hard to remove once levels carry it. List order in `src/systems/index.ts` is the order, and nothing sorts or resolves dependencies.
+2. **There is no fallback to the built-ins.** A project with no `src/systems/index.ts` runs *nothing* and its levels sit still. The tempting version — fall back to `BUILT_IN_SYSTEMS` so an old project keeps moving — makes the kernel quietly run its own demo inside somebody's game (`genre-spinup` S1's anticipation) and makes `spin` load-bearing at the exact moment it was meant to stop being. `BUILT_IN_SYSTEMS` is now a **menu, not a policy**: the sample project's own systems file imports `spinSystem` by name, which is the only reason its health icon turns.
+3. **Composition happens at the entry, not inside the runtime.** `runtime/web/main.ts` imports the virtual module and passes the list to `startGame(host, systems)`, which now takes it as an argument exactly as `runLevel` always did. One file in `runtime/` names the seam; everything downstream is a function of its inputs. `virtual:game-systems` is therefore the third entry in the runtime's allowed-imports list, and the comment there says why it is not a package.
+4. **The editor gets a getter, not a list.** `currentSystems()` reads a holder kept on `import.meta.hot.data`, which Vite preserves across a hot replacement — so a caller holding the getter from before an edit sees the systems from after it. A module-scope `let` does not survive: a replaced module is a new scope and the old closure reads the old one. `runtime/web/main.ts` uses the static `systems` instead, because a shipped folder is one build and nothing edits it while somebody is playing.
+
+**What that buys the human: pressing Play re-reads the game's code.** Edit a system, Stop, Play, new behaviour — no page reload, and the open level, the selection and the camera all survive. That was chosen over reloading the page on every save, which is what Vite does by default and what loses your place mid-edit.
+
+**Typechecking is the game folder's own job.** Both surfaces only transpile. The game holds a `tsconfig.json` whose `paths` maps the alias to a relative location — the one place a game names where the kernel sits, and one line to change if it moves. The code itself names only a package. _[earned 2026-08-13]_
 
 ### D13: Export targets are kernel-level, one command each
 
@@ -398,6 +415,12 @@ React + docking layout + Zustand/immer + Zod, with only the viewport differing b
 ---
 
 ## Gotchas
+
+### G14: The dev server watches its root, and a game folder is not in it — so hot reload of a game's code silently never fires
+
+The virtual module resolves, the game's systems compile in, Play runs them, and editing one changes nothing at all. Vite's watcher covers the project root (`editor/`); a game folder is a sibling of the whole repo, so a file in it can be in the module graph and still never be reported as changed. Adding the *entry* file to the watcher is not enough either — a project's systems are as many files as it likes, and the entry is only the one that lists them.
+
+**Fix/policy:** `server.watcher.add(<project>/src)` in the plugin's `configureServer`, the whole folder rather than a file. The general form is worth recognising: **any mechanism that watches for change is untested until something outside the watched tree has been changed**, and its failure mode is silence rather than an error. This one was caught by a browser test that edited a system and asserted the behaviour went away; a test that only asserted the system *ran* would have passed throughout. Same family as `editor-verification` W9 — a check whose green means nothing — one layer down in the tooling. _[earned 2026-08-13, Vite 8.2.1]_
 
 ### G1: Serialization drift is the top structural risk, and it must be fenced before the second tool exists
 
