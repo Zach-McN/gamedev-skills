@@ -192,6 +192,20 @@ Two different specs failed on two consecutive runs, neither of them the spec und
 
 The general shape, and the reason this is worth writing down rather than shrugging at: **a flake that appears only after several consecutive runs is evidence about the machine, not about the code**, and the instinct to harden whichever test happened to draw the short straw makes the suite worse. Ask what changed between the green runs and the red ones; if the answer is "nothing but the number of runs", the answer is the runs. _[earned 2026-08-12, Windows 11, Playwright 1.62.1]_
 
+### W17: A recursive delete of a folder containing a directory junction can delete through it, and `node_modules` is the folder you will have linked
+
+Setting up the parity drill means standing a second checkout beside the real one, and `node_modules` is the obvious thing not to duplicate — a junction (`New-Item -ItemType Junction`) is the cheap answer on Windows and is correct. Tearing the workspace down afterwards is where it goes wrong: `Remove-Item -Recurse -Force <workspace>` **followed the junction and emptied the real `node_modules`**, taking 62 packages down to 27 and leaving `.bin` empty.
+
+It is a nasty failure for three reasons stacked up. `Test-Path node_modules` still answers **true**, because the folder is there and merely gutted. Nothing in git notices, because it is ignored. And the symptom arrives at the next command as `'tsc' is not recognized`, which reads as a broken PATH or a bad shell — anywhere but a delete that has already happened.
+
+**Fix/policy, in order of preference:**
+
+1. **Do not put the junction inside the folder you will recursively delete.** Point the workspace's config at the real `node_modules` instead, or keep the link outside the tree being removed. This removes the hazard rather than handling it.
+2. If a junction must live there, **delete the link first and assert it is gone** before the recursive remove — `(Get-Item path -Force).Delete()` then a `Test-Path` check. Do not trust `-ErrorAction SilentlyContinue` around either step: the whole failure is a step that quietly did not happen.
+3. **The repair is `npm ci`, and it is complete**, because the lockfile is the record. Five seconds, no judgement needed — which is worth knowing before spending any time diagnosing the PATH.
+
+The general shape: **a link inside a scratch directory turns "delete the scratch directory" into an operation with a blast radius outside it**, and the blast lands in generated files that no version control is watching. Worth checking on sight whenever a temporary workspace is built by linking something expensive. _[earned 2026-08-12, Windows 11, PowerShell 5.1]_
+
 ### W13: A gesture is many events, so reading right after it reads the middle of it
 
 A middle-drag test dispatched a move in eight steps and read the result as soon as anything had changed. It got seven eighths of the drag, and failed by exactly one step — which reads as the pan arithmetic being wrong rather than as the read being early. `await page.mouse.up()` resolves when the input has been dispatched, not when the application has finished responding to all of it.
