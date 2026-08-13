@@ -196,6 +196,20 @@ The rest of the file, in the order they earn their place:
 
 ## Gotchas
 
+### W20: A forbidden-folder check that matches path segments cannot see a folder outside the repo, and reads as green
+
+`tests/architecture/boundaries.test.ts` forbids the runtime importing from `editor/`, `sidecar/`, `scripts/` and `tests/` by resolving each specifier and taking the first segment of `path.relative(REPO_ROOT, resolved)`. Adding `games` to that list — the obvious way to assert "the kernel never imports from a sibling game folder" — produces a test that **can never fail**: for anything outside the repo the first segment is `..`, so the comparison against `'games'` is never true. It passes, it reads as a guard in the file, and nothing about it looks wrong.
+
+Same family as W9 and V6 — a check whose green means nothing — but arriving by a different route. W9's mechanism is an empty input; here the input is full and the *predicate* is the thing that cannot fire.
+
+**Fix/policy:** when the thing being forbidden lives outside the tree being scanned, assert the boundary as a **direction** rather than as a name — `path.relative(REPO_ROOT, resolved).startsWith('..')`, "no relative import escapes the repo". Three things fall out, and they are why this is the general answer rather than a workaround:
+
+1. It catches the next sibling folder nobody has thought of yet, not just the one that prompted it.
+2. It cannot go vacuous — it scans files that certainly exist, rather than needing the forbidden folder to be present.
+3. It is layout-independent, so the repo cloned on its own still passes. A test naming `games/` would have needed a W9 guard asserting that folder exists, and would then go red for anyone who cloned the kernel without it.
+
+And check the *scope* of the block you are extending while you are in there: the existing one scans `runtime/` only, because it is about what ships. A repo boundary is about all four layers. _[earned 2026-08-13, first genre spin-up]_
+
 ### W19: A fixed timestep whose size is not exactly representable makes `STEP * n` fewer than `n` steps
 
 `STEP_MS` is `1000 / 60`, which is `16.666666666666668`. `STEP_MS * 3` is exactly `50` — **less** than three of those — so a test that hands the loop `STEP_MS * 3` and expects three steps gets two. The accumulator is right; the arithmetic that built the frame is what is wrong, and nothing about the failure says so. It reads as an off-by-one in the loop, which is the file you then go and stare at.
@@ -356,7 +370,7 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/sidecar/document-endpoint.test.ts` — the create and the replace held to refusing each other's job, refusals first, and neither format allowed to be written over the other.
 - `kernel-2d/tests/runtime/frames.test.ts` — the frame geometry, held to "every frame reported is a whole frame, and every pixel outside one is counted".
 - `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
-- `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and the runtime/editor boundary as a test rather than a promise (`editor-kernel` D20).
+- `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and two boundaries held as tests rather than promises: what ships (runtime never imports the editor, `editor-kernel` D20) and where the repo ends (no relative import escapes it, W20).
 - `kernel-2d/tests/sidecar/asset-endpoint.test.ts` — the read privilege of `editor-kernel` D21 held to its four lines, refusals first.
 - `kernel-2d/tests/runtime/load-scene.test.ts` — the runtime's loader against a fake `ProjectReader`: no browser, no service, no folder, no renderer — and the only place the runtime's own validation is exercised at all (`editor-kernel` D26, point 2).
 - `kernel-2d/tests/shell/play-comparison.test.ts` — V24 as arithmetic: what counts as the same picture, and each way two pictures can differ named in the human's units.
