@@ -133,6 +133,14 @@ Two things that follow, both of which the first parity drill got wrong by not kn
 
 _[earned 2026-08-12, recorded after the first parity drill regenerated four formats without one]_
 
+### T19: A component field named `texture` names a texture to load, wherever it sits — the field name is the whole contract
+
+`textureRefsOf` (in the scene schema, beside `assetRefsOf`) walks an entity's component map at any depth — through unknown component types, through arrays — and collects every `AssetRef` sitting under a key called `texture`. Both texture-collection sites use it and only it: the runtime loader gathering what a level draws (`load-scene.ts`) and the editor's editing view (`scene-assets.tsx`), which must want the same set or the two pictures diverge (`editor-kernel` D2).
+
+**Reason:** a game's systems may create entities *while a level runs* — projectiles, wave-spawned monsters — and nothing can fetch mid-run, so the art a spawned entity wears has to be loaded with the level. But the components that declare that art are the game's own inventions, which the kernel deliberately has no schema for. Walking for one agreed field name lets authored content say "this is drawable art" without the kernel learning a single genre word — the tower-defense game's `tower.projectile.texture` is loaded by a kernel that has no idea what a tower is. The convention was already universal before it was a rule: every texture reference the kernel itself writes sits under a key called `texture`.
+
+Anything under a `texture` key that is not an `AssetRef` is skipped, not reported, on the same grounds as `assetRefsOf`: the walk answers "what art does this name", and a malformed reference names none. Worth knowing the boundary: `COMPONENT_REFERENCE_FIELDS` (rename fixups) does **not** walk this deep — a texture moved from inside the editor still fixes up sprite references but not ones nested in game components, which the id witness then reports at load instead. Generalising the fixup is a decision for the day it is somebody's real problem. _[earned 2026-08-14, first demanded by tower-defense projectiles]_
+
 ### T17: The `format` literal is data, so it belongs in the skills where a function name does not
 
 The literals are `kernel2d.asset-meta`, `kernel2d.scene`, `kernel2d.prefab`, `kernel2d.project`, and the served-answer formats spell themselves the same way (`kernel2d.document-view`). Every document on disk carries one (T1), and the service's registry is keyed on them (T13).
