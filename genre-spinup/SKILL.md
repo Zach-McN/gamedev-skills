@@ -130,6 +130,40 @@ The record of what produced the content is the `generatedBy` marker on every fil
 which is the thing that has to survive — not the script. _[earned 2026-08-13, first
 game content]_
 
+### S7: A game folder holds a generated launcher, and the kernel is what generates it
+
+The human's first gesture of every session was `cd` into the kernel and type a path.
+A game folder now holds `Open editor.cmd`, double-clicked from Explorer; it starts
+the same `npm run editor` against the folder it is sitting in.
+
+**The kernel writes it, and no game repo maintains one by hand.** The file has to say
+where the kernel sits *as seen from that game folder*, which is a fact only the kernel
+has — hand-written it is a guess, copied into every future game and wrong the first
+time either folder moves. So it is `npm run launcher -- <folder>`
+(`kernel-2d/scripts/launcher/write.ts`), run once per game and again after a move,
+and `sample-project` writes one too so a scratch folder is clickable the moment it
+exists. The game's `CLAUDE.md` says regenerate, never edit.
+
+Three things it forced that are worth carrying:
+
+1. **Two generators write into one project folder, so the marker had to stop being
+   local to one of them.** `GENERATED_BY` and the comment-marker check moved into
+   `kernel-2d/scripts/marking.ts`, shared. With a copy each, every generator can only
+   recognise its own output and "a file without the marker is human-authored and is
+   never overwritten" quietly becomes a rule about who wrote it last.
+2. **The comment marking place got its second file type, and it is not source code.**
+   The rule was written for `.ts`; a `.cmd` is the same answer for the same reason
+   (nowhere structural to put a field, and a `.meta` beside it would put a launcher in
+   the Assets panel as though it were art). The check is therefore a search for the
+   bare word `generatedBy`, deliberately not for any one comment syntax.
+3. **A double-clicked script must never close on its own.** Both failure paths — kernel
+   not found, editor exited non-zero — print and then `pause`. A console window that
+   vanishes takes the reason with it, which is the entire failure mode of the format.
+
+Not gated by G5, and this is the distinction: the fence asks whether a *noun in the
+genre spec* justifies a thing built for that game. The launcher is the same file for
+every game and is how the editor gets opened at all. _[earned 2026-08-13]_
+
 ## Gotchas
 
 ### SG1: A game folder is a git repo, so the Assets panel shows the human tooling files
@@ -151,8 +185,25 @@ Two things worth carrying past this one instance:
 
 _[earned 2026-08-13, first spin-up]_
 
+### SG3: A repo that normalises line endings will undo a generator whose reader is not the toolchain
+
+Both repos carry `* text=auto eol=lf` in `.gitattributes` — LF in the repo *and in the
+working tree*. The generated launcher is written CRLF because `cmd.exe` is its only
+reader, and without a rule git would hand a fresh clone the LF version. Nothing would
+fail loudly; batch files mostly survive LF, which is the bad kind of mostly.
+
+**Fix:** `*.cmd text eol=crlf`, in the game repo and in the kernel's copy that game
+repos are cloned from — the kernel commits no `.cmd` itself, the line is there so the
+next game folder starts right.
+
+**The general form, which is the part worth keeping:** a generated file whose consumer
+is outside the JS toolchain is exempt from whatever the repo normalises, and the
+exemption has to be written down beside the normalisation rule or the checkout quietly
+undoes the generator. _[earned 2026-08-13]_
+
 ## Contracts
 
+- `kernel-2d/scripts/launcher/write.ts` and `kernel-2d/scripts/marking.ts` — the launcher a game folder is opened by, and the marker both project-folder generators share (S7).
 - `games/tower-defense/docs/GENRE-SPEC.md` — the first genre spec, and the shape the rest should follow: what the game is, what the player does, the nouns, and an explicit **Not in this game** list. The last section is what makes it a fence rather than a wish list — G5 can only refuse something if the spec is willing to say no.
 - `games/tower-defense/CLAUDE.md` — the game-folder template: the ownership split, the fence, the local-skills rule, and a named statement of what does not run yet.
 - `gamedev/CLAUDE.md` — the workspace map (S3).
