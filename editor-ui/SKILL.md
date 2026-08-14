@@ -344,7 +344,27 @@ Three smaller things, each of which was a wrong version first:
 
 **The third caller is what forced the recipe out of the hook.** `usePlacePrefab` reads its prefab from the document store; a dropped prefab has never been in the store, because reading it off disk is what identified it. So what an instance *is* moved into a plain function both call — the same shape as `useDuplicateEntity` (U33), and for the same reason: two copies of "what a placed instance is" is two chances to write the one that copies the prefab's components instead of pointing at them. _[earned 2026-08-14]_
 
+### U36: Where a browser is, is a trail rather than a folder — and the pane sizes it sits in are fractions rather than widths
+
+Two small things the Assets panel wanted once it was a file browser, and each has a general form worth keeping.
+
+**The mouse's side buttons hop along a trail, and a trail is not the path.** Back from `assets/textures/characters` after one jump out to `assets` lands three deep again, where the human actually was; `parentOf` would land at the top of the project. So the browsing state is `{ folders: string[], at: number }` rather than one path, and it behaves the way a browser's does — including the part that decides the shape: **going somewhere new after stepping back drops everything ahead**, because a forward into a folder you have since changed your mind about is not a place you were on the way to. Everything already true of one path is now true of the list: U30's rename hook remaps every entry, or stepping back lands on a folder under its old name.
+
+**A resizable pane stores a fraction, never a width.** A docked panel is resized constantly, so a divider that remembered pixels leaves one pane the same size in a panel twice as wide, which is not the split anybody chose. Clamp in the state rather than at the handle — no caller may leave a pane too narrow to take hold of again — and give the pane a `min-width` as well, which loses to `flex-basis` going up and wins going down, exactly the asymmetry wanted. Two sizes for the handle itself: a hairline for the eye, a wider strip for the hand. And **double-click resets it**, because a divider is the one control that can be dragged into a state with no affordance left to explain itself, so the way out has to be on the thing that got you there.
+
+Both are window state above the layout, beside the view and the folder (U34): never serialized, never in a document, gone on reload. _[earned 2026-08-14]_
+
 ## Gotchas
+
+### UG14: Chromium navigates on the *release* of a mouse's back button, so cancelling the press looks like it worked
+
+The mouse's fourth and fifth buttons are a file browser's back and forward, and Chrome maps them to the browser's own history. A page that wants them has to cancel the browser's gesture, and the obvious place is `mousedown` — which is where `preventDefault` visibly works: the event reports `defaultPrevented`, the folder changes, and nothing appears to be wrong.
+
+**Chromium acts on `mouseup`.** So the press cancels, the release navigates, and the single-page app is replaced by whatever the tab held before it. In a window opened straight at the editor that is `about:blank`, so the first symptom is not "the wrong folder" — it is a blank white window and a lost session, arriving a moment after a gesture that appeared to work. Firefox acts on `auxclick` instead, so all three need cancelling.
+
+**Fix:** cancel `mousedown`, `mouseup` *and* `auxclick` for `button === 3 || button === 4`, and cancel them whether or not the gesture does anything — the editor never wants the page navigated, and a rule with an exception is a rule that gets found by the exception.
+
+Worth knowing for the test as much as the code: **Playwright's `mouse` API has three buttons and no more**, so the only way to press this one is `Input.dispatchMouseEvent` over a CDP session with `button: 'back'` and the held-buttons mask (8 for back, 16 for forward). That is the real button as the browser reports it — a synthetic `MouseEvent` from inside the page would prove the handler is wired up and say nothing about whether the browser had already taken the press, which is the entire failure. _[earned 2026-08-14, Playwright 1.62.1's Chromium]_
 
 ### UG13: A control above a browsing area resizes it, and the first half of a double-click then moves the target of the second
 
@@ -438,7 +458,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now.
 - `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, U22 (the control that puts a file in a human's project) and U29 (the one that renames, moves and deletes one). Also U34's frame: a bar, two halves either side of it, and the controls in a footer whose size cannot reach the browser (UG13).
-- `kernel-2d/editor/shell/asset-browsing.tsx` — U34's state: which view, which folder, which folders are open, and the rename hook U30 requires of all three.
+- `kernel-2d/editor/shell/asset-browsing.tsx` — U34's state and U36's: which view, the trail of folders and where along it you are, how the split is divided, which folders are open, and the rename hook U30 requires of all of them.
+- `kernel-2d/editor/shell/useFolderHistoryButtons.ts` — the mouse's side buttons, and UG14's three cancellations.
+- `kernel-2d/editor/panels/SplitHandle.tsx` — U36's divider: a fraction rather than a width, a hairline inside a strip, and the double-click that puts it back.
 - `kernel-2d/editor/panels/AssetGrid.tsx` — the icon view. One folder at a time, the same rows the tree gets, and the note on why thumbnails are a feature rather than a detail of this one.
 - `kernel-2d/editor/panels/AssetBar.tsx` — the breadcrumb and the cog behind which the three views live, including why the breadcrumb is not on screen when the tree is.
 - `kernel-2d/editor/shell/useFileMoves.ts` — the whole of a rename as a gesture: flush, plan, refuse, move, rewrite, report, and U30's remapping of what the human was looking at. The comment on why none of it goes through `edit` is the load-bearing one.
@@ -511,7 +533,8 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Any drop target but the picture. Not the Hierarchy, not an entity in it, and not an entity in the viewport — dropping a texture *onto* a sprite to re-point it is a different operation (changing a reference) wearing the same gesture as creating one, and the Inspector's picker already owns it.
 - Accepting a file dragged in from outside the editor. The marker type on the drag is what an OS file drag does not have, so it is refused by construction rather than by a check; copying a file into the project folder is the sidecar's business and nobody has asked for it.
 - Thumbnails on the icon view's tiles (U34). Every tile wears a folder or a blank-page glyph. A picture of the art costs a decode per file in the folder and has decisions of its own — when they are read, what they are cached on, what a sound's thumbnail even is — so it is a feature rather than a detail of the view.
-- Sorting, searching or filtering the icon view, a back button, and a tile size. The folder's own order (`editor-kernel` D4's rows, folders first) is the only order, the breadcrumb is the only way back up, and the tiles are one size.
+- Sorting, searching or filtering the icon view, and a tile size. The folder's own order (`editor-kernel` D4's rows, folders first) is the only order, and the tiles are one size.
+- Back and forward *buttons* in the bar. The trail exists and the mouse's side buttons walk it (U36), the breadcrumb goes back up, and nothing on screen goes forward — so a hand without a five-button mouse has no forward at all. Two arrows in the bar is the obvious answer and has not been asked for.
 - Remembering the Assets view or the folder across a reload. It is window state on purpose (U34); persisting it is the same feature as saved layouts (UG4) and belongs with it.
 - Deleting a folder. Renaming and moving take folders; deleting is one file at a time (`editor-kernel` D22).
 - A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons; `G`, `X`, `Y` and `Esc` are named by the caption while a grab is running; `Shift-D` is in the Duplicate button's tooltip. Nowhere else, and there is no list of them in the editor.
