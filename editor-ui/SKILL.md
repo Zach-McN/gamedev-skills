@@ -267,7 +267,31 @@ Four things that only show up once it is built:
 
 **What this did not become, and the reason is the interesting part.** Drawing a road was expected to need a tile painter — a panel, a grid, a brush. It turned out to need a snap and a press, both genre-neutral, both about a hundred lines, and the tile painter never had to exist. The rule that produced that (`genre-spinup` S1) sends work at the game's own vocabulary rather than at a panel; the corollary this session adds is that **the kernel's own gestures getting better is what tedium is answered with**, and a genre tool is for what is impossible rather than for what is slow. Drag-to-paint was not built for the same reason: clicking is quick enough, and a stroke that stamps is the first step toward a brush nobody has asked for. _[earned 2026-08-13]_
 
+### U32: One accent, it means "current", and it is defined in one file — dockview's included
+
+The editor was repainted to a reference UI the human supplied: near-black grounds, a hairline between surfaces, one warm accent. What survives the specific palette is the structure underneath it.
+
+**Every colour in the editor is a token in `kernel-2d/editor/shell/shell.css`, and the docking library's are the same tokens.** Dockview themes are built from a handful of base colours the rest derive from — Abyss has five — so a repaint is redefining those five under `.dockview-theme-abyss` in this stylesheet. The alternative, authoring a bespoke theme object in TypeScript, splits the palette across a `.css` and a `.tsx` and guarantees the two drift. The theme is still chosen in `App.tsx`, but for its *structure* rather than for its colour.
+
+**The accent means one thing: this is the current one.** The open tab of the focused group, the selected row, the field being typed in, the zoom that is exactly fitting. Not buttons, not headings, not anything merely important. It is the only saturated thing on a near-black screen, so a second meaning costs it the first — and "wrong", "waiting" and "working" keep their own three colours, which is what lets a status dot and a selection sit on screen together without being read as related.
+
+Three things that only appear once it is on screen:
+
+1. **"The current tab" has to mean the focused group's, not every group's.** Four docked groups have four open tabs; outlining all four says "current" four times, which says it none. The qualifier is one selector (`.dv-active-group`), and without it the rule above reads as decoration.
+2. **Selection is stated twice — a wash across the row and a bar down its leading edge.** On a near-black ground a 14%-opacity wash sits within a hair of an ordinary hover, and an edge bar alone is at the margin where nobody is looking. Either alone reads as "did that click do anything?"; together they do not.
+3. **Type carries a role split: sans for words, mono for chrome.** Tabs, status strip, section headings, badges, and the fields values are typed into are mono; file names, sentences and captions are sans. It is worth doing because it makes chrome unmistakably chrome — and it is worth doing carefully, for the reason in UG10.
+
+_[earned 2026-08-13]_
+
 ## Gotchas
+
+### UG10: A monospace font on every control clips the buttons, and only a screenshot says so
+
+Putting the chrome's mono face on `.control` — one line, since every control shares that class — clipped "Duplicate" to "Duplicat" and wrapped a three-button row onto three lines each. Mono is roughly a sixth wider than the UI sans at the same size, and a button is sized by its label where a field is sized by its box.
+
+**Fix:** mono on the fields (`--number`, `--text`), never on `--action`, `--step` or `--choice`.
+
+**Why it is worth an entry:** the full suite stayed green through it. Nothing asserts a button's width, and nothing should — that is a test that fails on every font change and catches nothing else. What caught it was looking at a screenshot of the panel, which is what the definition of done means by screenshot-verified rather than test-verified. **A type change is a layout change wherever a box is sized by its text.** _[earned 2026-08-13]_
 
 ### UG6: React's `onWheel` cannot `preventDefault`, and a middle-button `mousedown` must
 
@@ -304,6 +328,16 @@ Dockview sizes itself from a `ResizeObserver` whose callback is deferred through
 ### UG2: dockview-react 8 logs a console error about `dockview-enterprise` on every load
 
 `DockviewReact` unconditionally passes a `createContextMenuItemComponent` framework option, and dockview-core logs an error when the matching enterprise module is not registered. It appears once per page load, is not caused by anything the consumer does, and cannot be switched off through props. **Fix/policy:** ignore it, do not install `dockview-enterprise` to silence it, and do not write a "no console errors" assertion into the browser suite — that assertion would be permanently red for an upstream cosmetic. _[earned 2026-08-11, dockview-react 8.0.0]_
+
+### UG11: The middle of a dockview tab is a dead line for drops, and a font change is what finds it
+
+A tab is a drop target split 50/50 — left half means "insert before this tab", right half "insert after" — and dockview's own comparison is `x < 50%` on one side and `x > 50%` on the other, with no `center` zone registered for a tab. **A drop exactly on 50% resolves to neither, no overlay is shown, and the drop is discarded in silence.** No error, no console warning; the panel simply springs back.
+
+Nobody would find this by hand, because a hand never lands on one sub-pixel column. A test does: Playwright's `dragTo` aims at the element's centre by default, which is that line. Whether it rounds to one side or lands on it depends on the tab's fractional width — **so the browser suite's re-dock test was passing on the width of the old font, and changing the tab's typeface (U32) turned it red with no logic touched anywhere.** Half a day went into bisecting a stylesheet for it.
+
+**Fix:** aim the drop off-centre — `dragTo(target, { targetPosition: { x: 20, y: 12 } })` — and say in the test why. The rule generalises past dockview: **a drag test must never aim at the exact middle of a target that is divided in the middle.** A boundary is not a location; it is where two behaviours meet, and a test standing on it is measuring rounding.
+
+Worth knowing as product behaviour too: a human dropping a tab precisely on another tab's centre line gets nothing and drags again. It is a real dead zone, one column wide, and not worth patching around. _[earned 2026-08-13, dockview-core 8.0.0]_
 
 ### UG3: Vite binds to `localhost`, which is IPv6-first on Windows
 
@@ -368,7 +402,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/App.tsx` — the shell: status strip above, docking layout below, providers around both.
 - `kernel-2d/editor/shell/useSidecarStatus.ts` — how the editor learns which project it is connected to, and what it does when the answer stops coming (U3).
 - `kernel-2d/editor/shell/StatusStrip.tsx` — the connection line, including the `data-testid` hooks the browser suite reads.
-- `kernel-2d/editor/shell/shell.css` — the frame around the docking layout. Dockview's own chrome comes from its theme, not from here.
+- `kernel-2d/editor/shell/shell.css` — the frame around the docking layout, and **every colour the editor has**: the palette tokens, what the accent is allowed to mean, and the block that repaints dockview's theme in those same tokens (U32).
 - `kernel-2d/vite.config.ts` — the editor's root folder, the `/api` proxy to the sidecar (U2), and the loopback binding (UG3).
 - `kernel-2d/scripts/editor-server.ts` — the editor window's host, port, and open-a-browser knobs, with their environment variable names.
 - `kernel-2d/tsconfig.editor.json` and `kernel-2d/tsconfig.base.json` — the browser half of U4.
