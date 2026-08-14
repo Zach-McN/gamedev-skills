@@ -456,7 +456,7 @@ Dockview tabs render a close affordance by default, and the shell has no panel m
 
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
 
-- `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now.
+- `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now. Also the wrapper that puts all but the Viewport out of reach while a level runs (U26).
 - `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, U22 (the control that puts a file in a human's project) and U29 (the one that renames, moves and deletes one). Also U34's frame: a bar, two halves either side of it, and the controls in a footer whose size cannot reach the browser (UG13).
 - `kernel-2d/editor/shell/asset-browsing.tsx` — U34's state and U36's: which view, the trail of folders and where along it you are, how the split is divided, which folders are open, and the rename hook U30 requires of all of them.
 - `kernel-2d/editor/shell/useFolderHistoryButtons.ts` — the mouse's side buttons, and UG14's three cancellations.
@@ -466,6 +466,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/useFileMoves.ts` — the whole of a rename as a gesture: flush, plan, refuse, move, rewrite, report, and U30's remapping of what the human was looking at. The comment on why none of it goes through `edit` is the load-bearing one.
 - `kernel-2d/editor/shell/references.ts` — which documents point at a file, and the same documents with its new path written in. Only `path` moves; `id` never does.
 - `kernel-2d/editor/store/file-disk.ts` — the editor's two file operations, beside `document-disk.ts` and `meta-disk.ts`.
+- `kernel-2d/editor/store/open-documents.ts` — the one document store per window and the hooks panels read it through. The API itself is `editor-kernel`'s (D7); this is where the UI meets it, and where editing is suspended while a level runs (U26).
 - `kernel-2d/editor/panels/InspectorPanel.tsx` — the worked example of U10, U11 and U12: every state it can be in has a sentence, and the editable one is reached only from the store. Three document formats have a body of their own now, each reached by what the document says it is.
 - `kernel-2d/editor/panels/ProjectInspector.tsx` — U28: the third inspector body, the startup-level picker that reads a file before it writes a path, and the sentence that says what the current choice resolves to.
 - `kernel-2d/editor/shell/zoom.ts` — what is left of the zoom controls after the ladder moved into the shipping layer (`editor-kernel` D20): stepping, and the wording.
@@ -477,9 +478,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/SceneOverlay.tsx` — U16 again: the selected entity's outline, the crosshair on its position, the line a locked grab runs along (U33), wherever the camera has put the corner the scene's y counts up from, and which entities are actually on the canvas.
 - `kernel-2d/editor/panels/HierarchyPanel.tsx` — what is in the open scene, in draw order, and the four actions that change it — every one a transaction and none of them aware undo exists.
 - `kernel-2d/editor/panels/EntityInspector.tsx` — the second inspector, and where a D5 reference is written.
+- `kernel-2d/editor/panels/PrefabInspector.tsx` — the inspector body a prefab document gets: what a thing is, the button that puts one in a level, and the note on why placing is an edit to the level rather than to the prefab.
 - `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
 - `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
-- `kernel-2d/editor/shell/scene-view-context.tsx` — U18 and U19: the scene renderer, why two is a bounded number rather than a habit, one camera per scene for the life of the window, and the three conditions a scene satisfies before it is framed.
+- `kernel-2d/editor/shell/scene-view-context.tsx` — U18 and U19: the scene renderer, why two is a bounded number rather than a habit, one camera per scene for the life of the window, and the three conditions a scene satisfies before it is framed. Also `useDrawScene`: the request key that distinguishes two derivations of one level, and the answer to U27.
 - `kernel-2d/editor/shell/useSceneGestures.ts` — U20, U21, U31 and U33: left-press to pick, place or stamp, middle-drag, space-drag, wheel-to-zoom, the framing keys, `G` and its axis keys, `Shift-D`, Esc, and the order they take priority in.
 - `kernel-2d/editor/shell/useDuplicateEntity.ts` — U33's fifth point: one answer to what a copy is, called by the Hierarchy's button and by the viewport's key.
 - `kernel-2d/editor/shell/drawn-entities.ts` — every question asked about the picture the renderer drew: what an entity covers, what is on the canvas, and what is under the pointer. One set of rectangles, so a click cannot disagree with an outline.
@@ -488,7 +490,6 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/layout-context.tsx` — the handle on the docking layout, and the only thing that reaches it from outside a panel.
 - `kernel-2d/editor/shell/useSelectionFocus.ts` — U18's third practicality: which tab comes forward for what was just clicked.
 - `kernel-2d/editor/shell/asset-meta-context.tsx` — U9's second case, and why a fetch with a side effect is never a panel's to own.
-- `kernel-2d/editor/shell/zoom.ts` — the scale ladder of U17.
 - `kernel-2d/editor/shell/asset-kinds.ts` — what a file is (U11) and how to find it in the tree. Shared the moment a second panel needed the same answer.
 - `kernel-2d/editor/shell/asset-rows.ts` — which rows a folder has, and why a sidecar folds into the row of the file it annotates (`editor-kernel` D4). Shared because the Inspector counts a folder the same way the panel lists it.
 - `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, which scene is open, and nothing else.
@@ -515,15 +516,11 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/vite.config.ts` — the editor's root folder, the `/api` proxy to the sidecar (U2), and the loopback binding (UG3).
 - `kernel-2d/scripts/editor-server.ts` — the editor window's host, port, and open-a-browser knobs, with their environment variable names.
 - `kernel-2d/tsconfig.editor.json` and `kernel-2d/tsconfig.base.json` — the browser half of U4.
-
-- `kernel-2d/editor/store/open-documents.ts` — the one document store per window and the hooks panels read it through. The API itself is `editor-kernel`'s (D7); this is where the UI meets it, and where editing is suspended while a level runs (U26).
 - `kernel-2d/editor/shell/play-mode.tsx` — play as window state: what it is, what pressing Play does before it reads the file, and why it never touches one.
-- `kernel-2d/editor/shell/panels.tsx` — every panel declared once, and the wrapper that puts all but the Viewport out of reach while a level runs (U26).
-- `kernel-2d/editor/shell/scene-view-context.tsx` — the scene renderer's context, and `useDrawScene`: the request key that distinguishes two derivations of one level, and the answer to U27.
 
 **Not yet written** — until a path appears here, the contract does not exist and must not be assumed:
 
-- Inspector auto-generation from Zod schemas. There are two hand-written inspectors now, which is the point at which generalising has something to generalise *from*.
+- Inspector auto-generation from Zod schemas. Every inspector body is hand-written, and there are enough of them now that generalising has something to generalise *from*.
 - Gizmos for rotate and scale, a marquee, dragging a pivot or a frame grid, and cycling through overlapping sprites with repeated clicks. Position is the one thing a viewport can change; everything else is the Inspector's, deliberately.
 - A grid or rulers *drawn*. The snap is settable (U31) and nothing renders it, so a board lines up to lines nobody can see. The overlay that would draw them is U16-shaped work and has not been asked for.
 - Painting by dragging: a stroke that stamps one copy per cell crossed. Clicking is quick enough, and a stroke is the first step toward a brush, a rectangle tool and an eraser — none of which the kernel has been asked for and all of which are what `genre-spinup` S1 sends at a game folder.

@@ -109,6 +109,31 @@ Placing a sprite by dragging it is testable without a pixel: the gesture is disp
 
 **The one that catches a whole class of bug is the same drag repeated at a different zoom.** An implementation that never learned about the camera — one screen pixel treated as one level unit — passes every other assertion in the file, because they all happen at whatever zoom the scene opened at. Two practicalities for writing it: express the gesture as `units × scale` so the test says what it means, and **frame the entity before pressing on it at the new zoom**, because zooming about the middle of a level pushes anything near its edge off the panel and the press then lands on nothing. _[earned 2026-08-12]_
 
+### V21: A create is tested from the side where it refuses, and a picture waits for everything it is a picture of
+
+Two things learned adding the first feature that puts a file into a project folder.
+
+**The interesting half of "it makes a file" is "it will not make this one."** The happy path is one assertion; the guard that stands between the feature and somebody's finished level is that asking for a name already taken changes nothing — checked against the existing file's bytes *and* its timestamp (V12), because identical contents alone would also pass for a file that had been rewritten with the same text. Same for the folder it declined to create: assert the folder is *not there*, not merely that the file is not. And since creating and replacing are two separate requests (`editor-kernel` D22), each is tested for refusing to do the other's job — that pair is the whole safety argument, and testing one side of it proves half of nothing.
+
+**A screenshot must wait for every panel in it, not just the first one to settle.** The picture of a newly-made level was taken as soon as the scene opened, and caught the Inspector saying the file was not in the project — true of the folder listing it was holding, which arrives a beat later by way of the watcher. The image looked like a bug that did not exist. Wait for the slowest thing in frame; a screenshot that documents a transient is worse than no screenshot, because it is the artefact somebody reaches for when they are already suspicious. _[earned 2026-08-12]_
+
+### V22: When a feature is about a link, assert what the file does *not* contain — and that the file nobody edited is byte-identical
+
+Prefabs are a promise about two files at once: the level holds a reference and no copy, and editing the prefab reaches every instance. Both halves are invisible to the assertions a session naturally reaches for, because a design that copied the picture into each instance at placement time would draw the same picture, list the same rows, and pass every test written from the screen.
+
+Two assertions catch it and nothing else does:
+
+- **Read the level and assert the entity's component map is exactly `['prefab']`.** A positive assertion ("it draws the slime") is satisfied by the broken design too. The absence is the property.
+- **Fingerprint the file the human did not touch, change the prefab, and assert the fingerprint is unchanged** — bytes *and* timestamp (V12). An editor that copied would have had to rewrite the level, so this is the one assertion the wrong design cannot pass.
+
+Generalises past prefabs: whenever a feature's whole value is *not duplicating something*, the test has to be about the thing that should not be there, and about the neighbour that should not have moved. Write both early in the file, where they will not be dropped for being awkward to phrase. _[earned 2026-08-12]_
+
+### V23: A guard that is working makes an unrelated test fail somewhere it is not mentioned
+
+Three prefab tests failed with the service refusing to create the file — correctly, because it never makes a folder on the way (`editor-kernel` D22) and the temp project had no `prefabs/` in it. The failures read as "creating a prefab is broken", and the first instinct was to suspect the new feature.
+
+**Fix/policy:** when a suite tests writing into a folder, put the empty folder in the fixture (`'prefabs/': ''`, per V3) and name in a comment which guard would otherwise fire. The general shape is worth recognising on sight — same family as W7 and W9: a test whose failure message describes the wrong subject. Before changing the code under test, check whether some *other* rule is behaving exactly as designed. _[earned 2026-08-12]_
+
 ### V24: Two loaders of one document are checked by drawing both and comparing the reports, not by diffing the inputs
 
 Play mode gave the kernel a second way to turn a level into a picture: the editor's incremental resolution, and the runtime's own loader. They must agree, and nothing about a disagreement announces itself — both halves produce something that looks like a level. So the editing view's report is kept at the instant Play is pressed and compared with the running level's, entity by entity: same ids, same screen origin, same bounds. The verdict is on the panel (`data-play-match`) and in a sentence a human reads.
@@ -218,6 +243,12 @@ So the test needs a change made **before** the gesture and unrelated to it: move
 The shape generalises to anything claiming to be invisible to a history: **assert on the operation that should be next in line, not on the state the invisible one touched.** A test written against the state alone is green for the wrong reason (W7).
 
 Two smaller ones earn their place beside it, and both are one line: the keyboard gesture started with the pointer deliberately far from the thing it moves — which is the whole reason such a gesture exists, and the assertion an implementation that quietly needed a press over the sprite would fail — and the same gesture with the wheel spun and the framing keys pressed mid-flight, asserting the camera did not move. _[earned 2026-08-14]_
+
+### V31: The screenshot habit — one asserting-nothing picture per genuinely new picture
+
+A test that asserts nothing and simply writes a full-window screenshot to its output path. It is not a visual-regression baseline — those are brittle across machines — it is a picture to look at when something is reported as looking wrong, which beats reasoning about the source.
+
+**One per picture that can look wrong on its own, and no more.** The rule began as "exactly one" (the shell), was amended to "three" (the shell, the texture tab, the scene), and by 2026-08-14 the suite held one in nearly every feature spec — because nearly every feature since has put something genuinely new on screen: a placed prefab, a running level, an exported game served off the disk, a resized split view. The count was dropped rather than corrected a second time (`editor-kernel` G3: a number in prose ages silently); the test for the next spec is unchanged — **does this feature produce a picture that cannot be judged from any existing screenshot?** A screenshot per *test* is still noise, and a screenshot of something with no picture in it always was. _[recorded 2026-08-12 without an id or date; regularised and re-grounded against the suite 2026-08-14]_
 
 ## Gotchas
 
@@ -403,7 +434,7 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/sidecar/status-schema.test.ts` — V7 again, for a format that also crosses the wire: the same object is checked through memory and through the served response.
 - `kernel-2d/vitest.config.ts` — suite configuration, including the timeout the real-filesystem tests need.
 - `kernel-2d/playwright.config.ts` — the browser harness: how the editor is started, on which ports, against which throwaway project (V8).
-- `kernel-2d/tests/editor/shell.spec.ts` — the browser suite as it stands, and the worked examples of V9, W3, and the screenshot habit below.
+- `kernel-2d/tests/editor/shell.spec.ts` — the browser suite as it stands, and the worked examples of V9, W3, and the screenshot habit (V31).
 - `kernel-2d/tests/editor/assets.spec.ts` — V11, and the panel's behaviour against the real sample folder.
 - `kernel-2d/tests/editor/inspector.spec.ts` — every state a panel can be in, asserted as the sentence the human reads.
 - `kernel-2d/tests/editor/select-asset.ts` — the tree-navigation helper of W6, shared by every spec that needs something selected.
@@ -434,7 +465,7 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/sidecar/meta-write.test.ts` — the service's editor-driven write held to its edges, with every refusal checked against bytes *and* timestamp (V12).
 - `kernel-2d/tests/sidecar/meta-schema.test.ts` — V7 for the `.meta` format, and the rejections that make it a contract.
 - `kernel-2d/tests/sidecar/meta-files.test.ts` — V12: the sidecar's write privilege held to exactly its three lines, against a real filesystem.
-- `kernel-2d/tests/sidecar/meta-generation.test.ts` — the same rules through the running service (V13), including the "within a second" budget and the assertion that the folder settles rather than feeding itself.
+- `kernel-2d/tests/sidecar/meta-generation.test.ts` — the same rules through the running service (V13), including the "within a second" budget and the assertion that the folder settles rather than feeding itself. Also where D22's ordering rule is actually provable: a rename through the running service, against a live watcher, keeping its id.
 - `kernel-2d/tests/sidecar/meta-endpoint.test.ts` — the answer the Inspector receives over the wire, and every path-escape attempt refused.
 - `kernel-2d/tests/editor/test-project.ts` — the throwaway project the browser tests point the editor at, built at run time under `tests/.tmp/` and git-ignored (V10).
 - `kernel-2d/tests/sidecar/events.test.ts` — the change feed end to end: real folder, real watcher, real HTTP stream, including the reader that parses server-sent frames and the ordered teardown a live stream needs.
@@ -445,36 +476,6 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/editor/export.spec.ts` — V26 and V27 end to end: a served folder that plays the game, checked against play mode, moved somewhere else, opened off the disk, and proved to hold no editor.
 - `kernel-2d/tests/editor/project-settings.spec.ts` — choosing the starting level, in the human's units: it reaches the file, survives a reload, refuses a prefab, and Ctrl-Z takes it back.
 - `kernel-2d/tests/sidecar/file-operations.test.ts` — V28's refusals half: the move and the delete held to their edges against a real filesystem, every refusal checked against bytes, timestamp *and* the source still being there.
-- `kernel-2d/tests/sidecar/meta-generation.test.ts` — where the ordering rule is actually provable: a rename through the running service, against a live watcher, keeping its id.
 - `kernel-2d/tests/editor/rename.spec.ts` — V28 end to end, W14's binary restore, and W18's wait-for-the-editor rule; ends by running the real export command to show the refusal this feature exists to remove is gone.
 - `kernel-2d/tests/shell/references.test.ts` — the rewrite as arithmetic: the id untouched, a folder prefix, a hand-added key surviving, and a document that referenced nothing coming back as nothing.
 - `kernel-2d/tests/editor/test-export.ts` — V8 extended: the exported game the browser suite opens, built by running the real command.
-
-### V21: A create is tested from the side where it refuses, and a picture waits for everything it is a picture of
-
-Two things learned adding the first feature that puts a file into a project folder.
-
-**The interesting half of "it makes a file" is "it will not make this one."** The happy path is one assertion; the guard that stands between the feature and somebody's finished level is that asking for a name already taken changes nothing — checked against the existing file's bytes *and* its timestamp (V12), because identical contents alone would also pass for a file that had been rewritten with the same text. Same for the folder it declined to create: assert the folder is *not there*, not merely that the file is not. And since creating and replacing are two separate requests (`editor-kernel` D22), each is tested for refusing to do the other's job — that pair is the whole safety argument, and testing one side of it proves half of nothing.
-
-**A screenshot must wait for every panel in it, not just the first one to settle.** The picture of a newly-made level was taken as soon as the scene opened, and caught the Inspector saying the file was not in the project — true of the folder listing it was holding, which arrives a beat later by way of the watcher. The image looked like a bug that did not exist. Wait for the slowest thing in frame; a screenshot that documents a transient is worse than no screenshot, because it is the artefact somebody reaches for when they are already suspicious. _[earned 2026-08-12]_
-
-### V22: When a feature is about a link, assert what the file does *not* contain — and that the file nobody edited is byte-identical
-
-Prefabs are a promise about two files at once: the level holds a reference and no copy, and editing the prefab reaches every instance. Both halves are invisible to the assertions a session naturally reaches for, because a design that copied the picture into each instance at placement time would draw the same picture, list the same rows, and pass every test written from the screen.
-
-Two assertions catch it and nothing else does:
-
-- **Read the level and assert the entity's component map is exactly `['prefab']`.** A positive assertion ("it draws the slime") is satisfied by the broken design too. The absence is the property.
-- **Fingerprint the file the human did not touch, change the prefab, and assert the fingerprint is unchanged** — bytes *and* timestamp (V12). An editor that copied would have had to rewrite the level, so this is the one assertion the wrong design cannot pass.
-
-Generalises past prefabs: whenever a feature's whole value is *not duplicating something*, the test has to be about the thing that should not be there, and about the neighbour that should not have moved. Write both early in the file, where they will not be dropped for being awkward to phrase. _[earned 2026-08-12]_
-
-### V23: A guard that is working makes an unrelated test fail somewhere it is not mentioned
-
-Three prefab tests failed with the service refusing to create the file — correctly, because it never makes a folder on the way (`editor-kernel` D22) and the temp project had no `prefabs/` in it. The failures read as "creating a prefab is broken", and the first instinct was to suspect the new feature.
-
-**Fix/policy:** when a suite tests writing into a folder, put the empty folder in the fixture (`'prefabs/': ''`, per V3) and name in a comment which guard would otherwise fire. The general shape is worth recognising on sight — same family as W7 and W9: a test whose failure message describes the wrong subject. Before changing the code under test, check whether some *other* rule is behaving exactly as designed. _[earned 2026-08-12]_
-
-**The screenshot habit.** A test that asserts nothing and simply writes a full-window screenshot to its output path. It is not a visual-regression baseline — those are brittle across machines — it is a picture to look at when something is reported as looking wrong, which beats reasoning about the source.
-
-**One per surface that can look wrong on its own, and no more.** That is three now: the shell, the texture tab and the scene. The original rule said "exactly one", and what matters is the reason it moved rather than the number — a second canvas panel is a genuinely different picture, and reasoning about it from the shell's screenshot is the guessing this habit exists to avoid. A screenshot per *test* is still noise, and a screenshot of something with no picture in it always was.

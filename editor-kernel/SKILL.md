@@ -111,7 +111,7 @@ Ask it of anything the runtime is given permission to mutate: **is the thing bei
 
 ### D13: Export targets are kernel-level, one command each
 
-`npm run export:web` (Vite static build) and `npm run export:desktop` (native shell). **Reason:** the runtime is web-native, so both targets are a packaging step over identical game code — which makes the desktop-shell choice deferrable and reversible. Building both into the kernel means every genre editor inherits them instead of re-deciding. _[seeded 2026-08-11, report §4]_
+~~`npm run export:web` (Vite static build) and `npm run export:desktop` (native shell).~~ **Struck 2026-08-14 by a gardening pass: neither command has ever existed under those names.** The web half shipped as `npm run export -- <project>` (the amendment below); the desktop half is still unwritten. Same failure D4's collider line records — a seeded literal reads as current until somebody checks it. **Reason:** the runtime is web-native, so both targets are a packaging step over identical game code — which makes the desktop-shell choice deferrable and reversible. Building both into the kernel means every genre editor inherits them instead of re-deciding. _[seeded 2026-08-11, report §4]_
 
 **The web half is discharged, as `npm run export -- <project> [--out <folder>]`, and it turned out to be four decisions rather than a packaging step.** `kernel-2d/scripts/export.ts` plus `scripts/export/`. Each of these had an obvious wrong answer and the wrong answers are all cheap-looking.
 
@@ -159,7 +159,7 @@ Two practicalities: stream the file rather than reading it, or the size of someb
 Three things settled by building it, none of them visible from the outside:
 
 1. **The offset is the scene point at the *centre* of the canvas, not at a corner.** Identical information, and it is the difference between a panel dragged wider revealing scene on both sides and one that shifts everything already on screen. "I resize the panel and do not lose my place" then falls out of the shape of the data rather than being arranged for.
-2. **Snap the camera onto the device pixel grid once; never snap each sprite as it is drawn.** Both keep pixel art crisp. Only the first keeps the distance between two entities exact at every zoom — with per-sprite rounding, the measured extent of a level comes out slightly different depending on how far in you happen to be, so **framing stops being idempotent**. That surfaces as pressing the frame key twice and getting two different zooms, which reads as a broken key rather than as a rounding decision three files away.
+2. **Snap the camera onto the device pixel grid once; never snap each sprite as it is drawn.** Both keep pixel art crisp. Only the first keeps the distance between two entities exact at every zoom — with per-sprite rounding, the measured extent of a level comes out slightly different depending on how far in you happen to be, so **framing stops being idempotent**. That surfaces as pressing the frame key twice and getting two different zooms, which reads as a broken key rather than as a rounding decision three files away. The renderer-side statement of the same finding is `phaser4-runtime` P5.
 3. **Framing is a one-shot press, not a mode.** A texture preview is something you look at, so it can sensibly stay in a fitting mode; a scene camera is something you drive, and a resize has to keep your place rather than reframe. The two viewports share a zoom ladder and deliberately do not share this.
 
 4. **The crossing into screen space changes the sign of a rotation *and* its unit.** A level stores rotation in **degrees**, because that is what a designer types into a field; the renderer wants **radians**, because that is what the engine takes. The flip of sign — y is up in a scene and down on screen, so the same visual turn is the opposite angle — is the half that gets remembered, and it is the half that is visible when you get it wrong. Getting the *unit* wrong is a factor of about 57 and looks, on screen, like a sprite that simply refuses to point anywhere sensible. Both conversions live in the one function that crosses, and the name says which way it goes. _(Added 2026-08-12: the first parity drill regenerated this module with the sign and not the unit, which is exactly the half the earlier wording carried.)_
@@ -238,7 +238,7 @@ Still three lines, and it stays three lines as prefabs and data tables arrive �
 
 **Reason:** the obvious design is one write that creates when there is nothing there, and it means a single mistake in the editor turns "make a new level" into "erase this level". Kept apart, the create refuses when anything is at the path and the replace refuses when nothing is, so a confused caller gets a sentence instead of a destroyed afternoon. That generalises into the question to ask of every widening of this file: **not "is this operation safe?" but "what does this operation do if the caller is confused about which one it wanted?"** Both halves get tested from both sides, or only the half somebody remembered is real (V13).
 
-Two guards belong to the create specifically. **It never makes a folder** — a path whose parent is not already there is refused, because creating folders is a second privilege wearing the first one's clothes and a mistyped path would quietly grow a tree of them. And **it is exclusive at the filesystem** (`wx`), not an existence check followed by a write: the check-then-write version has a window that two editors on one folder land in, and `EEXIST` is not an error there, it is the answer. _[earned 2026-08-12]_
+Two guards belong to the create specifically. **It never makes a folder** — a path whose parent is not already there is refused, because creating folders is a second privilege wearing the first one's clothes and a mistyped path would quietly grow a tree of them. And **it is exclusive at the filesystem** (`wx`), for exactly D17 point 1's reason — the check-then-write window, and `EEXIST` as the answer rather than an error. _[earned 2026-08-12]_
 
 **Keyed on the document's own `format` string, never on the path.** Where a file sits in the folder tree is a convention (`scenes/` is in the folder map, not in the code); what a document says it is, is a fact — the same ordering as `editor-ui` U11, and the first real payoff of the format literal every document has carried since T1. A consequence worth wanting: "this is not a format I know" and "this is a format I know and the file is malformed" are then *different* answers with different sentences, where a single discriminated union over all known formats would have collapsed them into one unhelpful "invalid". _[earned 2026-08-11]_
 
@@ -281,7 +281,7 @@ Three consequences that are easy to get wrong in the other direction:
 
 ### D25: A reference between documents is resolved by the format, once, and the resolved copy is never what gets written
 
-An entity that is an instance of a prefab carries a reference and nothing else. `resolveEntity(entity, prefab)` — in `runtime/formats/scene-schema.ts`, not in the editor — merges the prefab's components under the entity's own, leaves the transform untouched, and hands back a copy.
+An entity that is an instance of a prefab carries a reference and nothing else. `resolveEntity(entity, prefab)` — in `runtime/formats/prefab-schema.ts` (it moved out of the scene schema with the rest of the prefab format, T14), not in the editor — merges the prefab's components under the entity's own, leaves the transform untouched, and hands back a copy.
 
 **Three decisions, each of which had an obvious wrong answer.**
 
@@ -354,10 +354,6 @@ So the rule generalises past its original wording: **an operation belongs on thi
 - **It is gated with the edits it takes back** (`editor-ui` U26): a cancel writes to the document like anything else, so it is refused while a level is running, for the same reason undo is.
 
 The generalisation for the next gesture: **an operation that can be abandoned needs a run identity, and the run's own recorded inverse is what abandons it** — never a remembered value written back. _[earned 2026-08-14]_
-
-_[earned 2026-08-11]_
-
-_[earned 2026-08-11]_
 
 ### D18: Autosave, debounced, with no dirty state and no save button
 
@@ -467,6 +463,13 @@ Duplication, dead code, and creeping complexity are not caught by behavior tests
 - **Item 3's tell fires on correct duplication as often as on drift, so the survey has to finish the reasoning.** Two files doing near-identical arithmetic with echoing comments (`editor/shell/play-comparison.ts`, `kernel-2d/tests/instruments/drawn-comparison.ts`) turned out to be unmergeable: they compile in *different TypeScript projects*, the only module both can reach is `runtime/`, and a comparison against an editor inside the shipping layer is precisely what D1 forbids. Twenty-five duplicated lines is the right price. **Record a correct duplication where the next pass will find it**, or every future survey re-opens it and re-derives the same answer.
 - **A count carried forward in a checklist ages exactly like a count carried in a comment.** The previous pass left "four descriptions of the same three failures, and the export added a fifth". Checked: there are **two** (`scene-assets.tsx`, `scene-prefabs.tsx`). The export command consumes the runtime's one union and applies its own policy, which is what D13 designed; the project inspector answers a different question in a deliberately flatter shape. The item was real and half its scope was imagined — so **a survey verifies its own inherited list before acting on it**, which costs one read per item and is the difference between gardening and rearranging.
 
+**Run a third time, at the eight-feature cadence the second run set — and the rot was in the skills, not the code.** The code survey found two dead exports, an alias-shuffle wrapper, one LRU image cache duplicated across the two renderers, three same-folder helper duplications, and a handful of comment paths naming files that had moved — all mechanical, all behind the green gate. The skill library was worse: this skill's own "not yet written" list still denied the update loop a day after D27 shipped, and listed the prefab format as existing and as unwritten in the same section, thirty lines apart. The suite guards the code every session; nothing but a gardening pass guards the skills. Two additions to the checklist:
+
+6. **Check every "not yet written" list against its Contracts list first.** A parked-features register ages faster than any count in prose — a feature lands, its contract line is added, and the parked entry promising it is never re-read. It is also the highest-damage staleness in the library, because the register's own preamble tells a regenerating session to treat it as authoritative.
+7. **Verify each audit finding against the file before acting on it.** Three of five comment-path fixes in one finding list turned out to be already correct. The second run's "a survey verifies its own inherited list" applies just as much to a list generated fresh this morning.
+
+_[earned 2026-08-14]_
+
 **The sharper form of that item, for whoever takes it next.** The duplication that actually matters there is not the two type unions, it is that **three of the sentences a human reads are byte-identical across `runtime/scene/load-scene.ts` and the two editor files.** Improve the wording in one and the editor and the exported game start describing one failure two ways. The constraint that made the split correct — the runtime may not import the editor — does not forbid the reverse, and `describeLoadProblem` is already exported and already consumed by the export command. Left undone deliberately this pass; it is a change with a visible surface, and the gate here is that nothing observable moves. _[earned 2026-08-12]_
 
 ### G4: "Just generate this one level" breaks the guarantee retroactively
@@ -558,16 +561,17 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/sidecar/document-files.ts` — two of D22's six lines: the create and the replace kept apart, and every guard that keeps each of them from doing the other's job.
 - `kernel-2d/sidecar/file-operations.ts` — the other two: the move and the delete, the ordering of a file and its `.meta` in each, the rule that stops the service acting on its own writes, and the one check-then-act in the service, admitted rather than hidden.
 - `kernel-2d/sidecar/file-change-schema.ts` — what a move or a delete answers with, and why refusal has no spelling in it.
-- `kernel-2d/editor/shell/useFileMoves.ts` — the fixup as a gesture: flush, plan, refuse before anything moves, rename, rewrite, report. The comment on why none of it goes through `edit` is D7's newest line.
-- `kernel-2d/editor/shell/references.ts` — D5's fixup: which documents point at a file, and the same documents with its new path in. `path` moves, `id` never does.
+- `kernel-2d/editor/shell/useFileMoves.ts` — the fixup as a gesture: flush, plan, refuse before anything moves, rename, rewrite, report. The comment on why none of it goes through `edit` is D7's newest line. Owned by `editor-ui`.
+- `kernel-2d/editor/shell/references.ts` — D5's fixup: which documents point at a file, and the same documents with its new path in. `path` moves, `id` never does. Owned by `editor-ui`.
 - `kernel-2d/runtime/game/run-level.ts` — D27 in one file: the transient copy, what a run is told and what it tells back, and the reason the copy is deep. Read this before changing anything about what a running level may touch.
 - `kernel-2d/runtime/game/loop.ts` — the timing policy: the fixed step, the ceiling, and what happens to the time the ceiling discards.
 - `kernel-2d/runtime/game/system.ts` — the whole of what a system is. Deliberately the smallest interface in the kernel; the pressure to grow it should be resisted until a game applies it.
+- `kernel-2d/runtime/game/systems/index.ts` — `BUILT_IN_SYSTEMS`, the menu-not-policy of D28 point 2: a project that wants one imports it by name, and nothing falls back to it.
 - `kernel-2d/editor/shell/running-level.ts` — the editor's entire part in a running level, and the ordering that makes the play comparison mean something.
 - `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema`: the flat entity list, the transform, the open component map, and the registry of components the kernel knows. Owned by `text-formats`.
 - `kernel-2d/runtime/formats/prefab-schema.ts` — `PrefabSchema` and the resolution of D25. Imports the scene's registry and is never imported back, which is the whole of why these are two files (T14).
-- `kernel-2d/editor/shell/scene-prefabs.tsx` — D25 as built: which prefabs a level points at, read into the store, merged by the format's own function, and the three things that can be wrong with a reference.
-- `kernel-2d/editor/shell/usePlacePrefab.ts` — one gesture, two places to reach it from, and why the prefab comes from the store rather than from what the level already references.
+- `kernel-2d/editor/shell/scene-prefabs.tsx` — D25 as built: which prefabs a level points at, read into the store, merged by the format's own function, and the three things that can be wrong with a reference. Owned by `editor-ui`.
+- `kernel-2d/editor/shell/usePlacePrefab.ts` — one gesture, two places to reach it from, and why the prefab comes from the store rather than from what the level already references. Owned by `editor-ui`.
 - `kernel-2d/runtime/scene/scene-view.ts` — the second renderer, and its report of which entities it drew, where, through which camera, and how much level there turned out to be.
 - `kernel-2d/runtime/scene/load-scene.ts` — **D2's second sentence**: a level opened by the runtime itself. The `ProjectReader` seam (D26), what is fatal and what is merely named, and the sentence each problem gets. Also the worked example of D16's Node-compilable constraint.
 - `kernel-2d/runtime/scene/scene-request.ts` — why two interfaces live apart from the renderer that consumes them: the compiler boundary of D16, stated where somebody would otherwise move them back.
@@ -579,16 +583,16 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/runtime/scene/drawn-in-scene.ts` — the renderer's report, in the level's own units. One projection, called by the editor's viewport and by the exported game.
 - `kernel-2d/scripts/export.ts` and `kernel-2d/scripts/export/` — **D13's web half**: `config.ts` (where it may write), `plan.ts` (what goes in and every refusal), `write.ts` (the four steps and their order), `manifest-schema.ts` (the record that makes a second export safe), `editor-markers.ts` (D1 checked on the artefact), `project-reader.ts` (the third reader).
 - `kernel-2d/scripts/serve-folder.ts` and `kernel-2d/scripts/serve.ts` — how an export is looked at, and the read privilege of a folder served locally. Deliberately not part of an export.
-- `kernel-2d/editor/shell/play-mode.tsx` — what Play does before it reads the file, and why a refused save stops it.
+- `kernel-2d/editor/shell/play-mode.tsx` — what Play does before it reads the file, and why a refused save stops it. Owned by `editor-ui`.
 - `kernel-2d/editor/shell/play-comparison.ts` — "what I see matches what the editor was showing me", as arithmetic over two reports from one renderer.
 - `kernel-2d/runtime/scene/entity-layer.ts` — documents into drawn objects: matched by id, updated in place, depth from list order.
 - `kernel-2d/runtime/scene/coordinates.ts` — scene space (y-up, bottom-left), the camera (D23), and how the two become screen space. One definition, no Phaser.
-- `kernel-2d/editor/shell/scene-view-context.tsx` — where the view lives: one camera per scene for the life of the window, and the three conditions a scene has to satisfy before it is framed.
-- `kernel-2d/editor/shell/useSceneGestures.ts` — middle-drag, space-drag, wheel-to-zoom, and the two framing keys.
-- `kernel-2d/editor/shell/scene-assets.tsx` — D5 as built: resolve by path, compare the id, report rather than veto.
+- `kernel-2d/editor/shell/scene-view-context.tsx` — where the view lives: one camera per scene for the life of the window, and the three conditions a scene has to satisfy before it is framed. Owned by `editor-ui`.
+- `kernel-2d/editor/shell/useSceneGestures.ts` — middle-drag, space-drag, wheel-to-zoom, and the two framing keys. Owned by `editor-ui`.
+- `kernel-2d/editor/shell/scene-assets.tsx` — D5 as built: resolve by path, compare the id, report rather than veto. Owned by `editor-ui`.
 - `kernel-2d/editor/store/document-disk.ts` — the editor's write for documents, beside `meta-disk.ts`.
 - `kernel-2d/editor/store/documents.ts` — **the transaction API** (D7): the store, the two doors, the single time-ordered undo stack, the coalescing rule, `abandonEdits` for a gesture that is called off, the debounced save, and the convergence argument of G10 written where the handler is. Nothing else in the editor may change a document.
-- `kernel-2d/editor/store/open-documents.ts` — the one store per window, and the hooks panels read it through.
+- `kernel-2d/editor/store/open-documents.ts` — the one store per window, and the hooks panels read it through. Owned by `editor-ui`.
 - `kernel-2d/editor/store/meta-disk.ts` — the editor's whole write privilege, in one function.
 - `kernel-2d/sidecar/start.ts` — bringing the sidecar up as a library rather than as a command, which is what lets the editor launcher host it in-process (D9).
 - `kernel-2d/sidecar/ignore.ts` — what the sidecar never lists and never watches.
@@ -597,14 +601,13 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 **Not yet written** — these are the kernel's core contracts and land as the corresponding sessions build them. Until a path appears here, the contract does not exist and must not be assumed:
 
-- `PrefabSchema` — reusable entity templates. The document endpoint is already shaped to take it: adding one is a schema plus a line in the registry.
-- Deleting a *folder* from the editor. Renaming and moving take folders; deleting is one file at a time, because "delete this folder and everything under it" is a blast radius and the question the editor asks first — what still uses this? — stops having a short answer (D22).
+- Deleting a *folder* from the editor. Renaming and moving take folders; deleting stays one file at a time — D22 point 4 holds the reason in full.
 - Parenting. The entity list is flat and ordered, which is the shape a `parent` field can be added to without a migration; nothing can set one yet, so nothing carries one.
 - Repairing a reference to a file that moved **outside** the editor. The fixup exists for a move the editor performed, where both paths are known before either watcher event arrives (D5, G7). Outside it there is still nothing to correlate a disappearance with an appearance, and the settings are gone at the next start.
 - A desktop export. D13's other half. The web export exists and is a static folder, so a native shell is a wrapper over it rather than a second build of the game.
-- Anything that moves. There is no update loop, no input handling and no component but `sprite`; play mode and an exported game both load and draw, and stop there.
+- Input. Things move now — D27's loop and D28's systems are real — but nothing in the runtime reads a keyboard or a pointer while a level runs. A game with controls is the session that decides where input state lives. *(This entry said "anything that moves" until 2026-08-14; the loop and systems had existed for a day by then. A parked-features list ages faster than any count — verify it against the Contracts list above before trusting either.)*
 - More than one level in a game. `project.json` names a startup scene and nothing can reach a second one, so the export's transitive closure is complete by accident rather than by design. The day a level can name another, the closure walk in `plan.ts` is the thing that follows it.
 - Anything about making an export small: no minification (deliberately off, so D1's marker check stays trustworthy), no packing, no atlases. `game.js` is a few megabytes.
 - Creating `project.json` from inside the editor. It is edited when it is there, the sample generator writes one, and the export refuses by name when it is not — but nothing in the editor will make one.
 - One vocabulary for the same three failures. The editor's edit-mode resolution and the runtime's loader each describe "missing", "unreadable" and "not the file this was written against" in their own words, in `scene-assets.tsx`, `scene-prefabs.tsx` and `load-scene.ts`. **Surveyed 2026-08-12 and left standing deliberately.** The union *shapes* genuinely differ and should — the editor holds a folder listing and can say "that file is not in the project", which the runtime has no way to know. What is not defensible is that three of the **sentences** are byte-identical across the boundary; the fix is the editor's two describe functions delegating to the runtime's `describeLoadProblem`, which is already exported and already consumed by the export command. It has a visible surface, so it belongs to a session whose gate allows one.
-- Inspector controls generated from a Zod schema. The texture settings and the entity fields are both hand-written; there are now two inspectors to generalise *from*, which is the point at which it becomes worth doing.
+- Inspector controls generated from a Zod schema. Every inspector body is hand-written; there are enough of them now to generalise *from*, which is the point at which it becomes worth doing.
