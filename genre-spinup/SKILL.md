@@ -159,6 +159,12 @@ Three things it forced that are worth carrying:
 3. **A double-clicked script must never close on its own.** Both failure paths — kernel
    not found, editor exited non-zero — print and then `pause`. A console window that
    vanishes takes the reason with it, which is the entire failure mode of the format.
+   And **its remedy names a session, not a command**: the reader of that message is
+   the person who never opens a terminal, so "ask Claude to refresh this launcher"
+   is the fix and the command is the footnote. Generated text a human reads is held
+   to the same standard as `docs/using-the-editor.md`, not to the standard of a stack
+   trace. It is also plain ASCII throughout — the console reads it in the OEM
+   codepage, where a typographic dash lands as mojibake mid-sentence.
 
 Not gated by G5, and this is the distinction: the fence asks whether a *noun in the
 genre spec* justifies a thing built for that game. The launcher is the same file for
