@@ -346,6 +346,14 @@ Nobody would find this by hand, because a hand never lands on one sub-pixel colu
 
 Worth knowing as product behaviour too: a human dropping a tab precisely on another tab's centre line gets nothing and drags again. It is a real dead zone, one column wide, and not worth patching around. _[earned 2026-08-13, dockview-core 8.0.0]_
 
+### UG12: A dev server that opens the browser as it starts races the backend behind its own proxy
+
+Starting the editor with Vite's `server.open` means the page loads while the sidecar is still sweeping `.meta` files. Its first call is proxied to a port nothing is listening on yet, and the terminal prints `[vite] http proxy error: / … ECONNREFUSED` above the banner that says everything started. The editor then connects on its own — it has a connecting state and retries — so what the human is left with is **an error message about a working editor**, which is the worst kind to leave in a launcher: it teaches them that the red text in this window means nothing.
+
+**Fix:** start the server with `open: false`, bring the backend up, and call `server.openBrowser()` afterwards. It opens regardless of the configured `open` value — that setting only supplies a path when it is a string — so the ordering costs nothing.
+
+**The general form:** anything that opens a window is the *last* step of starting, after everything that window will immediately ask for is answering. The race is invisible on a fast machine and on an empty project, which is exactly why it survives until a real folder is opened on a real morning. _[earned 2026-08-14, Vite 8.2.1]_
+
 ### UG3: Vite binds to `localhost`, which is IPv6-first on Windows
 
 The dev server's default host resolves to `::1`, so anything looking for the editor at `127.0.0.1` — a test harness, a health check, a script — times out against a server that is demonstrably running and printing its URL. **Fix/policy:** set `server.host` to `127.0.0.1` explicitly, the same literal the sidecar binds to. Spell it as an address, never as `localhost`, anywhere the two halves have to find each other. _[earned 2026-08-11, Vite 8.2.1]_
