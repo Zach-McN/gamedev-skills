@@ -196,6 +196,19 @@ The rest of the file, in the order they earn their place:
 
 **And the live-watcher test is not optional.** The ordering that keeps a rename's id — sidecar first, file second, with the service ignoring its own writes — can only fail against a real watcher, because there is nothing to lose the race to without one. A test against the functions alone passes with the rule removed entirely. Same shape as V2: the property under test belongs to the system, not to the module. _[earned 2026-08-12]_
 
+### V29: Looking at the editor is a committed command, not a snippet written again each time
+
+The definition of done says visual changes are screenshot-verified, and for a long time that meant a throwaway script per session: launch a browser, navigate, click into a level, screenshot. Written slightly differently every time, half a minute of scaffolding before anything could be seen, and — worse — subtly *different* every time, so two sessions' pictures were not of the same thing.
+
+`npm run shot -- <project> [state...]` (`kernel-2d/scripts/shot.ts`) is that snippet, once. It starts the editor, drives it to a few named states, saves a PNG of each and stops. Four things earn it its place:
+
+1. **It starts the editor the same way the human does.** The startup sequence was extracted to `scripts/editor/start.ts` and is now shared by `npm run editor` and this — a second copy would eventually photograph something subtly unlike what the human runs.
+2. **Its ports are never the defaults**, so a shot run cannot collide with, or quietly attach to, an editor already open. That is `playwright.config.ts`'s rule, and the trap is the same: a picture of the wrong project.
+3. **It never writes.** Every state selects, opens and zooms; none moves, places or renames. That is what makes it safe to point at the human's own game folder rather than only at a fixture.
+4. **`--scale`, for looking closely.** Chrome work — a corner, a hairline, an accent a pixel wide — is invisible at 1×. Rendering at 3× is the difference between judging it and guessing.
+
+**What it is deliberately not: a baseline.** Nothing compares these PNGs to a stored copy. A screenshot-diff suite fails on font rendering, on driver versions and on every deliberate change, and its failures cost more attention than the bugs it catches. The pictures are for a human to look at, and the folder is git-ignored. _[earned 2026-08-14]_
+
 ## Gotchas
 
 ### W21: A geometry test calibrated to the panel size it was written at goes red on a stylesheet
@@ -211,7 +224,16 @@ The four are worth listing, because they are four different ways to make one mis
 
 **Fix/policy:** state a geometry assertion in the subject's own units with a tolerance the measurement can actually promise — V1 is usually read as being about readability, and it is at least as much about stability. Never aim a gesture at the exact middle of anything that is divided in the middle. Anchor a locator to the box that owns the thing, not to a box that currently shares an edge with it.
 
-**And the diagnostic order, which is what cost the time here:** when a purely visual change turns geometry tests red, measure the behaviour by hand in a real page *before* touching either the code or the tests. Both wrong answers are available and both are expensive — "my CSS broke the editor" sends you bisecting a stylesheet, and "the tests are just brittle" quietly ships a regression. One measurement says which. _[earned 2026-08-13]_
+**And the diagnostic order, which is what cost the time here:** when a purely visual change turns geometry tests red, measure the behaviour by hand in a real page *before* touching either the code or the tests. Both wrong answers are available and both are expensive — "my CSS broke the editor" sends you bisecting a stylesheet, and "the tests are just brittle" quietly ships a regression. One measurement says which.
+
+**The sweep afterwards, and what it found** — worth recording because most of it came back clean, and knowing which shapes are *safe* is half of this:
+
+- **Safe: a click at the middle of the canvas** when the assertion is "it landed on the grid". A rounding flip lands on a different grid position, which is still on the grid. Only an assertion naming the *exact* expected position is on a knife edge.
+- **Safe: `toBeCloseTo(x, 6)` comparing a camera to itself** across an operation that must not move it. Idempotence assertions carry no size in them at all.
+- **Safe: a pixel tolerance for a claim that is genuinely about pixels** — "what is under the cursor stays under the cursor" is allowed two pixels because that is the claim.
+- **Not safe, and found twice: a magic distance in a locator.** Both divider finders accepted a sash within twelve pixels of a measured edge — a number that silently encoded how much space the layout left between panels. Now one shared helper (`kernel-2d/tests/editor/dividers.ts`) takes the *nearest* divider instead, which has no such number in it.
+
+_[earned 2026-08-13, swept 2026-08-14]_
 
 ### W20: A forbidden-folder check that matches path segments cannot see a folder outside the repo, and reads as green
 
@@ -364,6 +386,8 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 ## Contracts
 
 - `kernel-2d/tests/fixtures/project-fixture.ts` — the temp-project builder, `waitFor`, and `delay`. Everything filesystem-shaped in the suite starts here.
+- `kernel-2d/scripts/shot.ts` — pictures of the editor, taken by the editor (V29), and `kernel-2d/scripts/editor/start.ts`, the startup it shares with `npm run editor`.
+- `kernel-2d/tests/editor/dividers.ts` — finding the divider between two panels without encoding how far apart the layout puts them (W21).
 - `kernel-2d/tests/sidecar/watcher.test.ts` — the worked example of V1, V2, V5, and V6.
 - `kernel-2d/tests/sidecar/tree-schema.test.ts` — the round-trip pattern of V7.
 - `kernel-2d/tests/sidecar/status-schema.test.ts` — V7 again, for a format that also crosses the wire: the same object is checked through memory and through the served response.
