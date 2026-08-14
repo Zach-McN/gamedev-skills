@@ -277,6 +277,23 @@ Two honest edges. The API *will* act through a link if handed such a path direct
 
 **The contrast that makes this a rule rather than luck:** the export's `isInside` (`scripts/export/config.ts`) *must* resolve links, because it compares a `realpath`'d project folder against a raw `--out` argument — two namespaces, exactly V4's mismatch. Ask which situation a containment check is in before copying either version: paths built in one namespace compare lexically; paths from two sources resolve first (to the nearest existing ancestor, since an out folder may not exist yet). _[earned 2026-08-14, Windows 11]_
 
+### D30: The loopback bind bounds who can connect; an Origin/Host guard bounds who can instruct
+
+The service binds to 127.0.0.1, and for months that read as "only this machine can reach it". It is a weaker sentence than it sounds: **any web page in any browser on this machine can aim a blind POST at the loopback port.** The page cannot read the answer — the service sends no CORS headers — but `/delete`, `/move`, `/document` and `/meta` are driven entirely by query parameters, which makes them *simple requests* in the browser's taxonomy: no preflight, no permission asked, the request simply arrives. An endpoint that does damage without its answer being read is exactly what "blind" is enough for. Probed rather than assumed (2026-08-14): before the guard, a forged-Origin `POST /delete` answered 200 and the file was gone.
+
+The guard (`sidecar/request-guard.ts`, called before any routing in `server.ts`) is two rules over two headers a page cannot forge, refusing with 403 and one sentence:
+
+- **A state-changing request whose `Origin` names anywhere but this machine is refused.** The browser stamps Origin on every cross-site POST and PUT. A request with *no* Origin is not from a browser — curl, the tests, another local process — and passes, because anything already running on this machine holds the folder itself; refusing it would protect nothing.
+- **Any request whose `Host` names anywhere but this machine is refused, reads included.** That is the DNS-rebinding half: re-point `evil.example` at 127.0.0.1 and a page from that site becomes same-origin with the service in its own browser's eyes — CORS stops applying and *reads* become readable. But every request it sends still says `Host: evil.example`, which is the tell.
+
+Three decisions inside that, each with a tempting wrong answer:
+
+1. **"This machine" is the loopback spellings (`127.0.0.1`, `localhost`, `[::1]`), deliberately not "the editor's exact origin".** The editor's port is a knob (`scripts/editor-server.ts`), the sidecar runs with no editor at all (`npm run sidecar`), and a page served from this machine's own loopback is software that could already open the folder directly — a boundary drawn at the exact origin is one the service cannot actually hold, and it costs a broken editor the first time the port moves. Ports are ignored on both headers for the same reason: the proxy hands over the editor's, a direct call carries the service's own, and neither is a fact about *who* is asking.
+2. **The editor needed no change, because it never talks to the sidecar directly** — its calls go through Vite's proxy (`vite.config.ts`), arriving with the browser's own loopback Origin and the proxy's loopback Host. Which is also why the service must go on sending **no** CORS headers: `Access-Control-Allow-Origin` would be a second door cut beside this guard, granting the cross-site *reads* the browser currently denies for free. If a future caller seems to need CORS here, the answer is the proxy, not the header.
+3. **The refusal is 403 where every validation refusal is 400, and the difference is meant.** A 400 says "yours to fix, adjust and resend"; a 403 is not an invitation to adjust the request until it works. The tests lean on it: a forged-Origin write to an endpoint that also validates its body must earn the guard's 403, not the validator's 400 — same probe as V13's "both sides", proving the door is in front of the argument.
+
+Tested through the running server with `node:http` rather than `fetch` (`tests/sidecar/request-guard.test.ts`), because fetch treats Origin and Host as its own to set — the exact property the attack abuses — and every refusal is asserted against bytes-and-mtime on disk as well as the status line (V12). _[earned 2026-08-14]_
+
 ### D24: A document is its own annotation, so it carries its own id — no sidecar
 
 A prefab holds `id` as a field of the document. A texture's id lives in the `.meta` beside it. Both are D5 references from the outside and neither reader can tell the difference, which is the point.
