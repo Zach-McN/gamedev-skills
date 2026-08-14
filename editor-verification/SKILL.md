@@ -252,6 +252,17 @@ A test that asserts nothing and simply writes a full-window screenshot to its ou
 
 ## Gotchas
 
+### W22: A poll that parses a file the editor is writing can catch half of it, and the parse error fails the test instead of waiting
+
+`expect.poll` retries on a value that doesn't match, **not** on a callback that throws — a throw is the failure, immediately. So a poll built as `JSON.parse(fs.readFileSync(file))` over a file the sidecar writes is a race: the read can land mid-write, the file is present but incomplete, and the test dies intermittently with `SyntaxError: Unexpected end of JSON input` — in a test that was otherwise about to pass. It first showed up in `new-scene.spec.ts`; a sweep found the same shape in four more polls across `drag-from-assets`, `drag-place`, `snap-place` and `scene` specs.
+
+**Fix/policy:** a poll that reads a file another process writes must treat "unreadable right now" as one more round of polling, never as an answer. `kernel-2d/tests/editor/parse-when-whole.ts` is the one way to do it — parse inside a try, return `undefined` on failure, and let the caller map that to a value the poll cannot be waiting for (`?? -1` for a count). Two boundaries worth knowing:
+
+- A **text** poll (`readFileSync(...).includes(...)`) is already safe: half a file just doesn't contain the text yet, which returns `false` and polls again. Only a parse (or anything else that can throw on partial input) has this problem.
+- A read **outside** a poll doesn't want this treatment — there, a half-file is a real failure and should say so.
+
+Same family as V5: the poll is the wait, so everything inside it has to be a *probe*, and a probe never throws about the very condition it exists to wait out. _[earned 2026-08-14]_
+
 ### W21: A geometry test calibrated to the panel size it was written at goes red on a stylesheet
 
 Four browser tests went red when the editor's panels gained a gap and the canvas an eight-pixel inset (`editor-ui` U32). No logic changed, and the editor was behaving correctly in every one of them — measured by hand afterwards, a click still landed within a five-thousandth of a unit of where the camera said it did. What broke was four assertions that had been calibrated, silently, to the exact canvas size of the day they were written.
