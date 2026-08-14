@@ -281,6 +281,13 @@ Three things that only appear once it is on screen:
 2. **Selection is stated twice — a wash across the row and a bar down its leading edge.** On a near-black ground a 14%-opacity wash sits within a hair of an ordinary hover, and an edge bar alone is at the margin where nobody is looking. Either alone reads as "did that click do anything?"; together they do not.
 3. **Type carries a role split: sans for words, mono for chrome.** Tabs, status strip, section headings, badges, and the fields values are typed into are mono; file names, sentences and captions are sans. It is worth doing because it makes chrome unmistakably chrome — and it is worth doing carefully, for the reason in UG10.
 
+**A panel reads as a window with tabs on it, and that shape is three colours in the right order.** `background` is the frame the panels sit in and shows through the gaps between them; `strip` is the bar a panel's tabs sit on; `surface` is the page inside it — and **the open tab is painted `surface`**, square along its bottom edge with no margin under it, so it *is* the page reaching up into the bar. That is the whole of the browser-tab effect; it survives any palette that keeps those three in that order and dies the moment the open tab is given a fill of its own. Two consequences that are not obvious:
+
+- **The accent goes on the tab's top edge, not around it.** An outline draws a line along the bottom too — between the tab and the page it is supposed to be part of — and undoes the join.
+- **A panel whose content is not the page colour breaks the illusion**, and the viewport is exactly that: a near-black canvas well. Fixing it by lightening the canvas would be the tail wagging the dog, so the well is inset a fixed eight pixels instead, and the page shows as a frame around it. Fixed, because UG8 — the canvas's size is what framing is computed against, so an inset that varied with the panel's contents would be a feedback loop.
+
+The structure comes from picking dockview's **spaced** theme (`themeAbyssSpaced`) rather than hand-rolling gaps and radii: it is the variant that already gives each group rounded corners, a gap, and tabs belonging to their own group. Choose the theme for its structure and repaint its five colours; do not fight its structure with CSS.
+
 _[earned 2026-08-13]_
 
 ## Gotchas

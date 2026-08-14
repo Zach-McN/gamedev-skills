@@ -198,6 +198,21 @@ The rest of the file, in the order they earn their place:
 
 ## Gotchas
 
+### W21: A geometry test calibrated to the panel size it was written at goes red on a stylesheet
+
+Four browser tests went red when the editor's panels gained a gap and the canvas an eight-pixel inset (`editor-ui` U32). No logic changed, and the editor was behaving correctly in every one of them — measured by hand afterwards, a click still landed within a five-thousandth of a unit of where the camera said it did. What broke was four assertions that had been calibrated, silently, to the exact canvas size of the day they were written.
+
+The four are worth listing, because they are four different ways to make one mistake:
+
+1. **An expectation that lands on a rounding boundary.** The fixture's camera sits at x=160 and the grid is 8, 24, … 152, 168 — so the middle of the canvas is *exactly* halfway between two grid positions, and which side a click falls to is decided by the canvas being an odd number of pixels wide. Same shape as `editor-ui` UG11, a different library.
+2. **A ratio of two measurements that each carry a fixed error.** "The sprite grew by the zoom step" compared two outline widths, each including about a pixel of stroke; the error in the *ratio* depends on how big the sprite was, so a smaller panel made a passing test fail.
+3. **A pixel tolerance on something whose error is in units.** "F centres the entity" allowed two pixels. Framing centres on bounds read back from a raster, so the centre carries a fraction of a *unit* — two dozen pixels' worth at the zoom that test ends up at.
+4. **A locator anchored to the wrong box.** The divider was found by looking near the *stage's* edge; it lives on the *panel's* edge, and the two stopped coinciding the day the stage gained a margin.
+
+**Fix/policy:** state a geometry assertion in the subject's own units with a tolerance the measurement can actually promise — V1 is usually read as being about readability, and it is at least as much about stability. Never aim a gesture at the exact middle of anything that is divided in the middle. Anchor a locator to the box that owns the thing, not to a box that currently shares an edge with it.
+
+**And the diagnostic order, which is what cost the time here:** when a purely visual change turns geometry tests red, measure the behaviour by hand in a real page *before* touching either the code or the tests. Both wrong answers are available and both are expensive — "my CSS broke the editor" sends you bisecting a stylesheet, and "the tests are just brittle" quietly ships a regression. One measurement says which. _[earned 2026-08-13]_
+
 ### W20: A forbidden-folder check that matches path segments cannot see a folder outside the repo, and reads as green
 
 `tests/architecture/boundaries.test.ts` forbids the runtime importing from `editor/`, `sidecar/`, `scripts/` and `tests/` by resolving each specifier and taking the first segment of `path.relative(REPO_ROOT, resolved)`. Adding `games` to that list — the obvious way to assert "the kernel never imports from a sibling game folder" — produces a test that **can never fail**: for anything outside the repo the first segment is `..`, so the comparison against `'games'` is never true. It passes, it reads as a guard in the file, and nothing about it looks wrong.
