@@ -74,6 +74,62 @@ Three things fall out, and the third is the one to carry forward:
 
 **What it cost against the estimate.** The parked item named three sub-decisions and they were the right three; none turned out to be a trap. The unbudgeted work was elsewhere and in two places: the generator needed a third marking mode, because a `.ts` file can carry `generatedBy` neither as JSON nor in a `.meta` beside it without the asset pipeline annotating something that is not an asset; and the dev server does not watch a folder outside its root, which fails as *silence* (`editor-kernel` G14). Both are the same shape — **the mechanism was fine and the things around it had assumed every file was content.** _[earned 2026-08-13, first game code]_
 
+### S5: A game folder gets its own test runner, the first time its own code has logic in it
+
+Fired 2026-08-13 by the first real feature in the first game — monsters walking a
+drawn road. Until then a game's code was two lines that could be read and believed;
+the moment it had to work out an *order* from geometry, believing it was no longer
+available.
+
+**The kernel's suite cannot be the answer, by construction.** `boundaries.test.ts`
+asserts that no relative import escapes the kernel repo (SG2), so a kernel test
+cannot reach into a game folder — and pointing the kernel's Vitest include at a
+sibling would weld `npm test` in the application to the presence of a document. Both
+directions are the same mistake in different clothes.
+
+So the game folder gets a `package.json` and its own Vitest, pinned to the same
+version the kernel uses so both are tested by one runner rather than two. Three
+things fell out that a next genre should expect:
+
+1. **`node_modules` in a content folder is already handled** — the sidecar's ignore
+   list has it, and the game's `.gitignore` had it before there was anything to
+   ignore. Nothing had to change.
+2. **`package.json` shows in the Assets panel** and the Inspector calls it a document
+   it cannot read. That is SG1's noise with one more file in it, not a new problem:
+   `tsconfig.json` was already sitting there being exactly as unreadable.
+3. **The tests take entity lists, not files.** A system is handed entities and a step
+   size and nothing else, so a fixture that went through JSON would be testing the
+   kernel's loader on the way past — which the kernel already tests, and which turns
+   one failure into two possible faults.
+
+**The general rule:** the application is tested where it lives and so is the document;
+a test that has to span both is a sign the seam between them is in the wrong place.
+_[earned 2026-08-13, first game feature]_
+
+### S6: Content a human will replace comes from a throwaway generator; content that must be re-runnable gets a committed one
+
+The kernel's `sample-project` generator is committed and produces identical bytes
+every run, because a scratch project is made over and over by whoever is trying the
+editor (`editor-kernel` G4). The first game's art, levels and prefabs are the
+opposite kind of thing: **scaffolding authored once, for the human to replace piece
+by piece.** A committed generator for those would be a maintenance burden attached to
+files whose whole purpose is to stop existing — and, worse, one living in the kernel
+that knew what a road tile was, which is S1's failure arriving through the back door.
+
+So it was a script in a scratch folder, run once, kept nowhere. What makes that safe
+rather than sloppy is the two conditions it met:
+
+- **It went through the kernel's own schemas and serializers** rather than
+  hand-writing JSON, so what landed on disk was valid by construction. This is the
+  marking rules' "prefer the tool path" spent where it actually pays.
+- **It validated its own output before writing**, and the level was then loaded back
+  through the real `loadScene` and stepped by the real system. A generator that
+  writes a file the editor cannot open looks exactly like one that worked.
+
+The record of what produced the content is the `generatedBy` marker on every file,
+which is the thing that has to survive — not the script. _[earned 2026-08-13, first
+game content]_
+
 ## Gotchas
 
 ### SG1: A game folder is a git repo, so the Assets panel shows the human tooling files
@@ -101,6 +157,8 @@ _[earned 2026-08-13, first spin-up]_
 - `games/tower-defense/CLAUDE.md` — the game-folder template: the ownership split, the fence, the local-skills rule, and a named statement of what does not run yet.
 - `gamedev/CLAUDE.md` — the workspace map (S3).
 - `kernel-2d/tests/architecture/boundaries.test.ts` — both boundaries as tests: the runtime/editor one (`editor-kernel` D20), and the repo one that keeps the kernel out of `games/` (SG2).
+- `games/tower-defense/package.json` and `games/tower-defense/tests/levels.ts` — the shape of a game folder's own verification (S5): its own runner, pinned to the kernel's version, and fixtures built as entity lists rather than as files.
+- `games/tower-defense/docs/authoring.md` — the game-folder counterpart to `kernel-2d/docs/using-the-editor.md`. The kernel's page says what the *editor* can do; this one says how to author *this game* with it, and a genre needs one as soon as its levels have vocabulary of their own that the Inspector cannot show.
 
 **Deliberately unbuilt** — each has a named trigger, and building it before the trigger is the seeded-content failure the first parity drill measured (a rule written ahead of its referent goes stale invisibly).
 
@@ -110,6 +168,11 @@ _[earned 2026-08-13, first spin-up]_
   - **Trigger:** the first time a game folder holds human-authored content — the day Zach puts a texture or a level into `games/tower-defense/`. It has not fired: the folder exists and everything in it is generated.
   - **Intent:** make "never overwrite human work" structural rather than a rule sessions are trusted to remember. An unexercisable hook can only misfire, and a hook that misfires trains its owner to override it.
   - **Known constraint, because it is the kind that decides the design:** the marker now lives in three places depending on what the file can hold — inside a JSON document, in the `.meta` beside a binary, in a comment in a source file. Anything checking for it must know all three.
+
+- A way for a game folder to put an authoring surface of its own in front of the human.
+  - **Trigger:** the first genre tool that cannot be done with the kernel's existing gestures. It has *not* fired yet, and the near miss is the useful part of this entry: drawing a road was expected to need a tile painter and turned out to be reachable by placing a prefab twenty-six times, because S1's rule sent the work at the game's own vocabulary rather than at a panel. The trigger is a tool that is genuinely impossible this way, not one that is merely tedious — tedium is answered by the kernel's own placement gestures getting better, which is genre-neutral and needs none of this.
+  - **Intent:** answer the question S1 has been deferring — a game folder can supply *systems* to the runtime through one compiled seam, and can supply *nothing* to the editor. Whether that asymmetry is correct is undecided, and S1's rejection of a speculative `registerPanel` extension API is not the same as an answer.
+  - **Known constraint, because it is what makes this hard rather than long:** the kernel imports nothing from a game folder and that is a test, not a convention (SG2). Whatever this turns out to be, it cannot be the editor reaching sideways into `games/`.
 
 **Three of these fired on 2026-08-13** and have moved into the registers above rather than being deleted, because what they turned out to cost is the part worth keeping:
 
