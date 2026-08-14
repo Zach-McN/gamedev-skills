@@ -308,7 +308,31 @@ Five things that only appear once it is built:
 
 **What made this small: it wrote no undo code.** A grab is the drag's own machinery with a different trigger, and calling one off is `editor-kernel` D7's `abandonEdits` — a run identity plus the inverse patches already recorded. The gesture layer grew a mode, the document layer grew one primitive, and nothing in between had an opinion. _[earned 2026-08-14]_
 
+### U34: A second way of looking at the same folder is two components either side of one bar, and where you are browsing is window state
+
+The Assets panel gained the file-explorer view: a grid of tiles showing one folder at a time, a breadcrumb, and a cog offering tree / icons / both-at-once. Four things came out of it, and the first is the one that shapes the rest.
+
+**Which view, and which folder, live above the docking layout** — beside selection, the camera and the placing settings (U8, U19, U31). Not because two panels need them, but because dockview unmounts a panel body when its tab is dragged (U9), so a view the human chose and a folder they had walked three levels into would be thrown away by moving the panel. It is also what lets `useFileMoves` follow a rename into it, which U30 requires the moment any window state is keyed on a path — and the open set of the tree is keyed on a path too, one entry per open folder.
+
+**Which folder the grid is in and which folders the tree has open are two pieces of state, not one.** A tree has six folders open at once; a grid is inside exactly one. Deriving either from the other means walking into a folder in the grid shuts five others in the tree, or opening a second folder in the tree moves the grid somewhere nobody asked. What they *do* share is a direction: entering a folder anywhere opens the way down to it in the tree, so the two halves of the split view never disagree about where you are.
+
+**The breadcrumb is on screen only when the grid is.** A tree has no current folder, so a breadcrumb over one is a sentence about somewhere the human is not — worse than no sentence (U10 pointed the other way: the failure mode of a caption is not only saying nothing, it is saying something untrue). The bar itself stays in every view, because the cog is how you get back.
+
+**One press selects, two enters, and both halves ask `asset-rows.ts`.** The explorer's own split, and there is no improving on it: selecting is what the Inspector answers about, and a folder has to be selectable without being walked into. Both views get their rows from the same place (`editor-kernel` D4), so a `.meta` folds into its file's tile exactly as it folds into its row; two rules for what a folder contains would disagree the first time either changed, and the symptom is a file that exists in one view and not the other.
+
+What the view is *not*: not saved to disk, not in `project.json`, not per-project, and not in a document. A reload is back to the tree with everything shut, which is how the panel behaved before any of this existed. _[earned 2026-08-14]_
+
 ## Gotchas
+
+### UG13: A control above a browsing area resizes it, and the first half of a double-click then moves the target of the second
+
+The Assets panel's make-a-file and rename rows sat above the tree, where they had been harmless for two sessions: their height changes with the selection — the rename row does not exist until something is selected, and it says a different number of things about a folder than about a file. The moment the panel grew a view whose gesture is a **double-click**, that became a bug with no error in it. The first press selects the folder, the rename row comes into existence, every tile below it moves by that row's height, and the second press lands on whatever slid into that spot. No `dblclick` event is ever dispatched — the browser only fires one when both presses hit the same element — so the folder never opens and nothing anywhere reports a thing.
+
+Moving the controls *below* the browser does not fix it. In a short panel a footer that grows takes its room from the bottom of the browser, and the boundary sweeps up across the pointer instead of down: the second press landed in the name field of the make-a-file row.
+
+**Fix:** the controls hold a fixed share of the panel and scroll inside it — `height: min(40%, 150px)` — so nothing they contain can change the size of the browser above them. A share *and* a ceiling, because either alone is wrong: a proportion wastes a big panel and a fixed height swallows a small one, and a bare pixel count is a guess about a font (UG10).
+
+**The general form, and it is UG8 in a panel with no canvas in it: what a gesture is aimed at must not be moved by the first half of that gesture.** Worth checking on sight wherever a multi-press gesture shares a box with anything that changes size on selection — and the tell is unmistakable once seen, because the failure is *silence*: a double-click that does nothing at all looks exactly like a handler that was never wired up, which is where a session will go looking first. Confirming it took a document-level `dblclick` listener logging its target; the answer was the target being a text input three inches away. _[earned 2026-08-14]_
 
 ### UG10: A monospace font on every control clips the buttons, and only a screenshot says so
 
@@ -391,7 +415,10 @@ Dockview tabs render a close affordance by default, and the shell has no panel m
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
 
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now.
-- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, U22 (the control that puts a file in a human's project) and U29 (the one that renames, moves and deletes one).
+- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, U22 (the control that puts a file in a human's project) and U29 (the one that renames, moves and deletes one). Also U34's frame: a bar, two halves either side of it, and the controls in a footer whose size cannot reach the browser (UG13).
+- `kernel-2d/editor/shell/asset-browsing.tsx` — U34's state: which view, which folder, which folders are open, and the rename hook U30 requires of all three.
+- `kernel-2d/editor/panels/AssetGrid.tsx` — the icon view. One folder at a time, the same rows the tree gets, and the note on why thumbnails are a feature rather than a detail of this one.
+- `kernel-2d/editor/panels/AssetBar.tsx` — the breadcrumb and the cog behind which the three views live, including why the breadcrumb is not on screen when the tree is.
 - `kernel-2d/editor/shell/useFileMoves.ts` — the whole of a rename as a gesture: flush, plan, refuse, move, rewrite, report, and U30's remapping of what the human was looking at. The comment on why none of it goes through `edit` is the load-bearing one.
 - `kernel-2d/editor/shell/references.ts` — which documents point at a file, and the same documents with its new path written in. Only `path` moves; `id` never does.
 - `kernel-2d/editor/store/file-disk.ts` — the editor's two file operations, beside `document-disk.ts` and `meta-disk.ts`.
@@ -454,7 +481,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Painting by dragging: a stroke that stamps one copy per cell crossed. Clicking is quick enough, and a stroke is the first step toward a brush, a rectangle tool and an eraser — none of which the kernel has been asked for and all of which are what `genre-spinup` S1 sends at a game folder.
 - Dragging inside the Hierarchy tree, and nesting. The list is flat and reordering is two buttons.
 - Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it. The rename control operates on one file for the same reason.
-- Dragging a file inside the Assets tree to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one.
+- Dragging a file inside the Assets tree or grid to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one.
+- Thumbnails on the icon view's tiles (U34). Every tile wears a folder or a blank-page glyph. A picture of the art costs a decode per file in the folder and has decisions of its own — when they are read, what they are cached on, what a sound's thumbnail even is — so it is a feature rather than a detail of the view.
+- Sorting, searching or filtering the icon view, a back button, and a tile size. The folder's own order (`editor-kernel` D4's rows, folders first) is the only order, the breadcrumb is the only way back up, and the tiles are one size.
+- Remembering the Assets view or the folder across a reload. It is window state on purpose (U34); persisting it is the same feature as saved layouts (UG4) and belongs with it.
 - Deleting a folder. Renaming and moving take folders; deleting is one file at a time (`editor-kernel` D22).
 - A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons; `G`, `X`, `Y` and `Esc` are named by the caption while a grab is running; `Shift-D` is in the Duplicate button's tooltip. Nowhere else, and there is no list of them in the editor.
 - Two scenes open at once. `openScene` is one path.
