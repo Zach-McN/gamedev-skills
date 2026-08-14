@@ -322,6 +322,28 @@ The Assets panel gained the file-explorer view: a grid of tiles showing one fold
 
 What the view is *not*: not saved to disk, not in `project.json`, not per-project, and not in a document. A reload is back to the tree with everything shut, which is how the panel behaved before any of this existed. _[earned 2026-08-14]_
 
+### U35: A drag between two panels uses the browser's own drag for the *gesture* and the window's own state for the *payload*
+
+Dragging a file out of the Assets panel and letting it go over the level is the third way something gets placed, after a button and a mode. The split that made it small is the one worth copying.
+
+**The browser's drag-and-drop is used for everything it is good at:** it draws the ghost of the row being carried, it sets the cursor, it fires `dragenter`/`dragover`/`drop` with client coordinates, and it crosses from one docked panel into another without either of them arranging anything. A pointer gesture of our own would have re-implemented all of that and collided with the viewport's existing press handling (U21).
+
+**What it is *not* used for is carrying the path.** A `dataTransfer`'s *data* cannot be read until the drop — only its *types* are visible during `dragover` — so a viewport that wants to say "Drop enemy-slime.json here" while the pointer is still moving cannot get the name from there. Both ends are in one window, so the path lives in the window's own state beside the other placing settings (U31), and the `dataTransfer` carries one marker type saying "this is one of ours". One copy of the fact, and the marker is what keeps a text selection or a file dragged in from Explorer from being treated as an asset.
+
+**What a dropped file *is* is decided by reading it, at the drop.** The panel cannot know: a `.json` is a level or a prefab according to what it says inside itself (U11), and a `.png`'s extension is a guess its own `.meta` may overrule. So every file is draggable and the drop reads — a `.json` through `/api/document` for its `format`, anything else through `/api/meta`, which answers *what it is* and *the id to point at* in one round trip (the id being needed anyway, D5). This is U28's rule — validate by reading the file, not by trusting the path — arriving a second time, which is what makes it a pattern rather than a one-off.
+
+**A file that cannot be placed gets a sentence, not a row that refuses to be picked up.** "level-02.json is a level, so it cannot be placed in a level" and "jump.wav is a sound" are answers; a row that silently declines to move is a bug report waiting to be filed (U10). Only folders are undraggable, and they say so with `draggable={false}` rather than by omission — a fact written down is testable, an absence is an oversight.
+
+Three smaller things, each of which was a wrong version first:
+
+1. **`dragover` must cancel the event on every move, not just on `dragenter`.** Otherwise the browser refuses the drop, the ghost springs back to the panel, and nothing is said anywhere.
+2. **`dragleave` fires when the pointer crosses onto a child**, and the canvas is a child — so the naive handler switches the highlight off in the middle of the picture. Count enters and leaves rather than comparing `relatedTarget`; the count stays right whatever the panel gains later.
+3. **The highlight may not change the box.** It is an inset ring, because the stage's size is what framing is computed against (UG8).
+
+**A drop selects what it made** — unlike repeat-placing, which must not (U31). One drop is one deliberate act and the human's next move is to tune the thing they just put down. Selecting still happens outside the transaction (U8), so one drop is exactly one press of Ctrl-Z, and the feature contains no undo code.
+
+**The third caller is what forced the recipe out of the hook.** `usePlacePrefab` reads its prefab from the document store; a dropped prefab has never been in the store, because reading it off disk is what identified it. So what an instance *is* moved into a plain function both call — the same shape as `useDuplicateEntity` (U33), and for the same reason: two copies of "what a placed instance is" is two chances to write the one that copies the prefab's components instead of pointing at them. _[earned 2026-08-14]_
+
 ## Gotchas
 
 ### UG13: A control above a browsing area resizes it, and the first half of a double-click then moves the target of the second
@@ -452,7 +474,11 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/useReferences.ts` — following a reference by path and modification time, once: the read-token ordering, the ask-once rule, and why "not ready" is not a problem. Shared by the textures a level draws and the prefabs it places from.
 - `kernel-2d/editor/panels/fields.tsx` — the four pieces every inspector body is built from, and the note on which lookalike deliberately did not move in.
 - `kernel-2d/editor/shell/entity-names.ts` — one free-name helper, and the two things that actually differ between its callers.
-- `kernel-2d/editor/shell/usePlacePrefab.ts` — U24 as built: one gesture, reachable from the prefab and from what it just placed. Two doors rather than one optional argument, and the note saying why a button's `onClick` is what forces that.
+- `kernel-2d/editor/shell/usePlacePrefab.ts` — U24 as built: one gesture, reachable from the prefab and from what it just placed. Two doors rather than one optional argument, and the note saying why a button's `onClick` is what forces that. The prefab comes from the store here; what an instance *is* does not (U35).
+- `kernel-2d/editor/shell/place-into-scene.ts` — the two recipes for something new in a level, shared by every caller that puts one there: an instance of a prefab, and an entity that draws a texture. Plain functions, no hooks, no undo code.
+- `kernel-2d/editor/shell/useAssetDrag.ts` — U35's source half: what a file being carried out of the Assets panel puts on the drag, and why the path is not on it.
+- `kernel-2d/editor/shell/useSceneDropTarget.ts` — U35's target half: the three events, the enter/leave count, and the inversion through the camera the renderer drew with.
+- `kernel-2d/editor/shell/useDropIntoScene.ts` — what a dropped file turns out to be, read rather than guessed, and the sentence for each thing it cannot be.
 - `kernel-2d/editor/shell/snap.ts` — U31's arithmetic, and the paragraph on why a grid needs an offset as well as a step. No React in it, so the properties are unit-testable.
 - `kernel-2d/editor/shell/placing.tsx` — U31's state: what a press lands on and what it puts down, above the layout, in neither the document nor any file.
 - `kernel-2d/editor/panels/PlaceByClicking.tsx` — the switch, shared the moment the second inspector wanted it, and the note on why turning it on places nothing.
@@ -481,7 +507,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Painting by dragging: a stroke that stamps one copy per cell crossed. Clicking is quick enough, and a stroke is the first step toward a brush, a rectangle tool and an eraser — none of which the kernel has been asked for and all of which are what `genre-spinup` S1 sends at a game folder.
 - Dragging inside the Hierarchy tree, and nesting. The list is flat and reordering is two buttons.
 - Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it. The rename control operates on one file for the same reason.
-- Dragging a file inside the Assets tree or grid to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one.
+- Dragging a file inside the Assets tree or grid to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one. A file drags *into the level* (U35) and nowhere else.
+- Any drop target but the picture. Not the Hierarchy, not an entity in it, and not an entity in the viewport — dropping a texture *onto* a sprite to re-point it is a different operation (changing a reference) wearing the same gesture as creating one, and the Inspector's picker already owns it.
+- Accepting a file dragged in from outside the editor. The marker type on the drag is what an OS file drag does not have, so it is refused by construction rather than by a check; copying a file into the project folder is the sidecar's business and nobody has asked for it.
 - Thumbnails on the icon view's tiles (U34). Every tile wears a folder or a blank-page glyph. A picture of the art costs a decode per file in the folder and has decisions of its own — when they are read, what they are cached on, what a sound's thumbnail even is — so it is a feature rather than a detail of the view.
 - Sorting, searching or filtering the icon view, a back button, and a tile size. The folder's own order (`editor-kernel` D4's rows, folders first) is the only order, the breadcrumb is the only way back up, and the tiles are one size.
 - Remembering the Assets view or the folder across a reload. It is window state on purpose (U34); persisting it is the same feature as saved layouts (UG4) and belongs with it.
