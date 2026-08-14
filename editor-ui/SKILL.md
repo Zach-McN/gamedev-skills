@@ -250,6 +250,23 @@ The camera is the one that would have been missed, and its symptom is the confus
 
 The exception that proves the rule: **the tab that comes forward is not remapped, because it was never keyed on the path.** Selecting a texture brings the Texture tab forward (U18), and a renamed texture is still a texture, so it does the right thing by itself. Ask of each piece of window state: is it keyed on the path, or on what the thing *is*? Only the first kind needs moving. _[earned 2026-08-12]_
 
+### U31: A snap needs two numbers, and a repeat-place mode is keyed on a path rather than on the selection
+
+Two features, one entry, because they were built together and neither is worth much alone: a settable snap makes twenty-six placements line up, and placing by clicking is what makes twenty-six of them bearable. Both are settings of the *surface*, so both live above the layout beside the camera and the selection (U8, U19, U9) — never in a document, never in a `.meta`, never in `project.json`, invisible to Ctrl-Z, and back to their defaults on reload.
+
+**The snap is a step *and* an offset, and leaving the offset out is the mistake to have already made.** A step alone describes a grid through the origin, reaching 0, 16, 32. The first real board asked for 8, 24, 40 — because a sprite hangs off the *middle* of its position, so a 16-unit tile covering the square from 0 to 16 sits at 8. A step-only snap does not merely fail to help there: it puts every new tile half a cell from the ones already drawn, which is near enough to look deliberate and far enough to be a different square. Godot's 2D editor settled on the same pair (grid step, grid offset) and this is why. The default is `1 from 0`, which is exactly how the editor placed before any of it existed, so a window nobody has touched behaves as it always did.
+
+**A repeat-place mode holds the path of what it is placing, not the selection** — and that is the whole design, not a detail of it. U24 established that placing selects what it placed, which is right for one placement and impossible for twenty: the Inspector holds one thing at a time, so the first click would move it off the prefab. So the mode remembers a path, and **a press while it is on selects nothing at all.** That is a deliberate exception to U24 rather than a contradiction of it — U24's problem was a control moving out of reach, and the answer there was a second door; here the answer is for the gesture not to move anything. The test is the same shape and worth writing as an acceptance in its own right: **click three times without touching anything else.**
+
+Four things that only show up once it is built:
+
+1. **The mode has to beat "whatever is under the pointer" in the press order**, not lose to it. A board being drawn is covered by its own backdrop, so nearly every press that means "another one here" lands on something. A mode that placed only into empty space would place nothing at all on the first level anybody tried. Space-drag still wins over both, so panning works mid-board.
+2. **A mode that outlives the panel that switched it on has to say so somewhere that follows the eye.** The switch is in the Inspector and the hand is in the viewport, so the viewport's caption names what is being placed and the key that stops it, and the cursor changes. Esc is the way out, guarded by UG7's typing check like any bare key.
+3. **It is state keyed on a path, so U30 applies again, mechanically.** Rename the prefab you are half way through drawing a board with and every further click silently places nothing; delete it and the same. Both are handled where the camera's remap already is, and both are five lines that no test would have missed by their absence.
+4. **Turning the mode on must not place one.** The button beside it already means "one, now, in the middle of the view"; a toggle that also placed one would put the first copy somewhere the human did not click, which is the thing they turned it on to stop.
+
+**What this did not become, and the reason is the interesting part.** Drawing a road was expected to need a tile painter — a panel, a grid, a brush. It turned out to need a snap and a press, both genre-neutral, both about a hundred lines, and the tile painter never had to exist. The rule that produced that (`genre-spinup` S1) sends work at the game's own vocabulary rather than at a panel; the corollary this session adds is that **the kernel's own gestures getting better is what tedium is answered with**, and a genre tool is for what is impossible rather than for what is slow. Drag-to-paint was not built for the same reason: clicking is quick enough, and a stroke that stamps is the first step toward a brush nobody has asked for. _[earned 2026-08-13]_
+
 ## Gotchas
 
 ### UG6: React's `onWheel` cannot `preventDefault`, and a middle-button `mousedown` must
@@ -275,6 +292,10 @@ The viewport cancels the default on `pointerdown` — to stop text-selection dra
 The scene viewport is a stage above a caption bar in a flex column, so a caption that wraps to two lines makes the canvas twenty pixels shorter. Harmless for years — until framing, which is computed against the canvas size. The sentence that says "everything is off screen" is on screen at *exactly* the moment the human presses the key that frames the level, so the level gets framed for a panel that is about to grow back the instant the sentence goes away. Two presses of one key, two different zooms.
 
 **Fix/policy:** the caption on a surface whose size is used for anything must not be able to change that size. Switch wrapping off and let the notes ellipsise, with the full text on `title`; keep the sentences short enough that nothing is actually clipped. Shortening the sentence alone is not the fix — it moves the threshold to a different panel width. Worth checking on sight whenever a status line sits inside the same box as something measured: the tell is a message that only appears in the state the measurement is about to change. _[earned 2026-08-12]_
+
+**Wrapping was only the first way to break it, and the real rule is stronger: the bar must be the same height whatever is in it.** Putting two number fields in that bar made the canvas shorter *while editing* than while playing — a text input's baseline sits lower in its box than a paragraph's, so under `align-items: baseline` adding one grew the line box, and play mode swaps the whole caption for a different one. The canvas therefore resized at the instant Play was pressed, and the check that the running level was drawn exactly as the editing view had it refused to compare two different canvases (V24, correctly) and reported **"cannot be checked"** — which reads as a limitation of the feature and is a layout bug three files away.
+
+**Fix/policy:** centre rather than baseline-align, and give the bar a floor at the height of its tallest control, so two captions holding different things still measure the same. The general form, and it is why this is worth an amendment rather than a line: **when two modes swap one box for another, the box's size is part of the contract between them** — and the thing that notices is never the layout, it is whatever downstream feature compares the two modes. _[earned 2026-08-13]_
 
 ### UG1: Dockview's layout is computed inside `requestAnimationFrame`, so a non-compositing surface freezes it at 100×100
 
@@ -321,7 +342,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
 - `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
 - `kernel-2d/editor/shell/scene-view-context.tsx` — U18 and U19: the scene renderer, why two is a bounded number rather than a habit, one camera per scene for the life of the window, and the three conditions a scene satisfies before it is framed.
-- `kernel-2d/editor/shell/useSceneGestures.ts` — U20 and U21: left-press to pick and place, middle-drag, space-drag, wheel-to-zoom, the two framing keys, and the order they take priority in.
+- `kernel-2d/editor/shell/useSceneGestures.ts` — U20, U21 and U31: left-press to pick, place or stamp, middle-drag, space-drag, wheel-to-zoom, the framing keys, Esc, and the order they take priority in.
 - `kernel-2d/editor/shell/drawn-entities.ts` — every question asked about the picture the renderer drew: what an entity covers, what is on the canvas, and what is under the pointer. One set of rectangles, so a click cannot disagree with an outline.
 - `kernel-2d/editor/shell/open-scene.tsx` — which scene is open and the document behind it; one fetch that both decides a `.json` is a scene and puts it in the store.
 - `kernel-2d/editor/shell/scene-assets.tsx` — U9 for a set whose membership changes: every texture a scene refers to, resolved once per window.
@@ -336,7 +357,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/useReferences.ts` — following a reference by path and modification time, once: the read-token ordering, the ask-once rule, and why "not ready" is not a problem. Shared by the textures a level draws and the prefabs it places from.
 - `kernel-2d/editor/panels/fields.tsx` — the four pieces every inspector body is built from, and the note on which lookalike deliberately did not move in.
 - `kernel-2d/editor/shell/entity-names.ts` — one free-name helper, and the two things that actually differ between its callers.
-- `kernel-2d/editor/shell/usePlacePrefab.ts` — U24 as built: one gesture, reachable from the prefab and from what it just placed.
+- `kernel-2d/editor/shell/usePlacePrefab.ts` — U24 as built: one gesture, reachable from the prefab and from what it just placed. Two doors rather than one optional argument, and the note saying why a button's `onClick` is what forces that.
+- `kernel-2d/editor/shell/snap.ts` — U31's arithmetic, and the paragraph on why a grid needs an offset as well as a step. No React in it, so the properties are unit-testable.
+- `kernel-2d/editor/shell/placing.tsx` — U31's state: what a press lands on and what it puts down, above the layout, in neither the document nor any file.
+- `kernel-2d/editor/panels/PlaceByClicking.tsx` — the switch, shared the moment the second inspector wanted it, and the note on why turning it on places nothing.
 - `kernel-2d/editor/panels/TexturePicker.tsx` — one picker, two owners, and the D5 round trip that fetches a texture's id. Lifted out the moment a prefab needed the same control as an entity.
 - `kernel-2d/editor/shell/project-context.tsx` — U9. One folder read and one change stream per window.
 - `kernel-2d/editor/shell/useAssetMeta.ts` — one file's import settings, re-asked when the folder changes as well as when the selection does.
@@ -358,7 +382,8 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 
 - Inspector auto-generation from Zod schemas. There are two hand-written inspectors now, which is the point at which generalising has something to generalise *from*.
 - Gizmos for rotate and scale, a marquee, dragging a pivot or a frame grid, and cycling through overlapping sprites with repeated clicks. Position is the one thing a viewport can change; everything else is the Inspector's, deliberately.
-- A grid, rulers, or a settable snap size. A drag lands on whole level units and Alt frees it; nothing is configurable and nothing is drawn.
+- A grid or rulers *drawn*. The snap is settable (U31) and nothing renders it, so a board lines up to lines nobody can see. The overlay that would draw them is U16-shaped work and has not been asked for.
+- Painting by dragging: a stroke that stamps one copy per cell crossed. Clicking is quick enough, and a stroke is the first step toward a brush, a rectangle tool and an eraser — none of which the kernel has been asked for and all of which are what `genre-spinup` S1 sends at a game folder.
 - Dragging inside the Hierarchy tree, and nesting. The list is flat and reordering is two buttons.
 - Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it. The rename control operates on one file for the same reason.
 - Dragging a file inside the Assets tree to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one.
