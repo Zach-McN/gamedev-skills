@@ -347,6 +347,14 @@ So the rule generalises past its original wording: **an operation belongs on thi
 
 **Third payoff, and the one that made the bet look cheap: a continuous gesture.** Dragging a sprite around the viewport writes a position on every pointer move, and it is *one* press of Ctrl-Z — because a drag is a merge key held open and sealed on release, which is the machinery a text field already used for a run of keystrokes. No undo code was written for it. Two things a gesture adds to the rules above. The merge key has to carry the entity's id as well as the field, or dragging one sprite and then another is one step. And the recipe re-finding its target by id stops being a precaution and becomes load-bearing: a drag lasts seconds, which is long enough for a text editor to save over the file underneath it. _[earned 2026-08-12]_
 
+**Fourth: a gesture that can be *called off* is the one case this API did not already cover, and it took one new primitive rather than a special case.** Blender's `G` — grab, move, `Esc` to put it back — is a run of edits the human can decide never happened. The obvious implementation is wrong twice over: writing the remembered position back as one more edit is **the tool authoring its own inverse**, which is what G2 is about, and it ends at the right document while leaving a step on the stack that reverses nothing — a press of Ctrl-Z that appears to do nothing at all. So `abandonEdits(mergeKey)` sits beside `sealEdits`: it applies the inverse patches immer already recorded for that run and *removes the steps*, leaving the history exactly as it was before the gesture began. Three things that are not obvious until it is built:
+
+- **A run is identified by its merge key, so the key must be minted per gesture rather than per field.** `<path>#<id>#drag` is right for merging and wrong for abandoning — the *previous* move of the same entity carries it too, and would be taken back along with the one being cancelled. A counter per gesture is the whole fix (`<path>#<id>#move7`), and it is a more honest name for what a merge run is.
+- **It has to unwind *every* consecutive step carrying the key, not only the newest.** A gesture that pauses for longer than the merge window is two steps rather than one, and a grab pauses — that is what thinking looks like. Taking back half of a cancelled move is worse than taking back none of it.
+- **It is gated with the edits it takes back** (`editor-ui` U26): a cancel writes to the document like anything else, so it is refused while a level is running, for the same reason undo is.
+
+The generalisation for the next gesture: **an operation that can be abandoned needs a run identity, and the run's own recorded inverse is what abandons it** — never a remembered value written back. _[earned 2026-08-14]_
+
 _[earned 2026-08-11]_
 
 _[earned 2026-08-11]_
@@ -579,7 +587,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/useSceneGestures.ts` — middle-drag, space-drag, wheel-to-zoom, and the two framing keys.
 - `kernel-2d/editor/shell/scene-assets.tsx` — D5 as built: resolve by path, compare the id, report rather than veto.
 - `kernel-2d/editor/store/document-disk.ts` — the editor's write for documents, beside `meta-disk.ts`.
-- `kernel-2d/editor/store/documents.ts` — **the transaction API** (D7): the store, the two doors, the single time-ordered undo stack, the coalescing rule, the debounced save, and the convergence argument of G10 written where the handler is. Nothing else in the editor may change a document.
+- `kernel-2d/editor/store/documents.ts` — **the transaction API** (D7): the store, the two doors, the single time-ordered undo stack, the coalescing rule, `abandonEdits` for a gesture that is called off, the debounced save, and the convergence argument of G10 written where the handler is. Nothing else in the editor may change a document.
 - `kernel-2d/editor/store/open-documents.ts` — the one store per window, and the hooks panels read it through.
 - `kernel-2d/editor/store/meta-disk.ts` — the editor's whole write privilege, in one function.
 - `kernel-2d/sidecar/start.ts` — bringing the sidecar up as a library rather than as a command, which is what lets the editor launcher host it in-process (D9).

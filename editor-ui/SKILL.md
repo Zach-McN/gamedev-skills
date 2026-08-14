@@ -290,6 +290,24 @@ The structure comes from picking dockview's **spaced** theme (`themeAbyssSpaced`
 
 _[earned 2026-08-13]_
 
+### U33: A modal gesture is started by a key, owns the surface while it runs, and has three ways out
+
+Blender's `G` arrived in the viewport: press it and the selected entity moves with the pointer, with no button held; `X` and `Y` hold it to one axis from where it started; a click puts it down; `Esc` puts it back. It is worth having for a reason about hands rather than about parity — **the sprite you are placing is usually the one your cursor is covering**, so a gesture that must start on the sprite starts by hiding it, and one that can start anywhere does not. The same argument is why it wants no button held: the hand is free to travel the whole panel.
+
+**The origin may not exist yet, and that is the load-bearing detail.** A move is travel from where the pointer was when the gesture began (U21), and when the key is pressed the pointer may be over the Inspector, or outside the window, or somewhere it has not been since the last level was open. So the origin is *null until the pointer is next seen over the picture*, and the first sighting is taken as the origin rather than as a movement. The companion rule: **forget the last-known pointer position when it leaves the surface**, or a grab started with the hand elsewhere measures from a point the cursor left ten minutes ago and throws the entity across the level. A grab already running keeps its origin when the pointer leaves — that is what travel means, and the hand is allowed to come back.
+
+**While it runs it owns the surface, and every exception is a jump.** A press cannot select or pan, the wheel cannot zoom, the framing keys cannot move the camera. Each of those either changes what the travel is measured against (the camera's scale is what turns pixels into level units) or changes what is being moved, and both show up as the sprite leaving the cursor. This is U21's "one gesture layer decides what a press means" applied to a gesture that has no press: the mode is asked about first, above space.
+
+Five things that only appear once it is built:
+
+1. **It lives in a ref, not in state.** The keyboard starts it and the pointer drives it, so a grab read from React state is one render behind on the first movement after the key — and the entity jumps by however far the pointer travelled in that frame. The state is the copy that gets *drawn*.
+2. **An axis lock zeroes the travel on the other axis** rather than remembering a second position, which is what makes "from where it started" true by construction. Apply it on the keypress rather than waiting for the next movement: the human pressed `X` because they want the vertical gone *now*, and a lock that took effect on the next wobble reads as not having worked. A second press of the same key frees it — Blender spends that press on local axes, and a 2D entity has none to offer.
+3. **There are three ways out, and the third is a list.** Put it down, call it off — and *taken away*: the window losing focus, the level closing, Play starting, another panel moving the selection. All of those cancel rather than drop, because nothing was decided. Miss them and a grab keeps running invisibly, and the next mouse movement over the picture moves an entity nobody is moving.
+4. **The caption is the only place these keys exist.** A mode with nothing held has no affordance at all — no button is down, no handle is being dragged — so the bar names what is moving, which axis it is held to, and the way out, in as few words as the bar can show without clipping, with the whole sentence in the tooltip (U10, UG8). The lock also gets a line drawn across the picture through the entity's *position*, not the middle of its outline: a sentence is read once, a line is still there while the hand is moving.
+5. **The key that copies had to share an implementation with the button that copies.** `Shift-D` duplicates and selects the copy — the Hierarchy already had that button, so the operation moved into a hook and both call it. Two implementations of "what a copy is" would differ the first time the format grew a field. Same shape as `usePlacePrefab` (U24), for the same reason.
+
+**What made this small: it wrote no undo code.** A grab is the drag's own machinery with a different trigger, and calling one off is `editor-kernel` D7's `abandonEdits` — a run identity plus the inverse patches already recorded. The gesture layer grew a mode, the document layer grew one primitive, and nothing in between had an opinion. _[earned 2026-08-14]_
+
 ## Gotchas
 
 ### UG10: A monospace font on every control clips the buttons, and only a screenshot says so
@@ -381,17 +399,18 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/ProjectInspector.tsx` — U28: the third inspector body, the startup-level picker that reads a file before it writes a path, and the sentence that says what the current choice resolves to.
 - `kernel-2d/editor/shell/zoom.ts` — what is left of the zoom controls after the ladder moved into the shipping layer (`editor-kernel` D20): stepping, and the wording.
 - `kernel-2d/editor/panels/TextureSettings.tsx` — the first editable controls, hand-written, and the worked example of U14. Every one of them goes through the transaction API and none of them knows undo exists.
-- `kernel-2d/editor/shell/useUndoShortcuts.ts` — U13, and the only keyboard handler in the editor.
+- `kernel-2d/editor/shell/useUndoShortcuts.ts` — U13, and the modifier-only half of the editor's keyboard.
 - `kernel-2d/editor/panels/ViewportPanel.tsx` — the scene, and the worked example of U10 at its widest: no scene open, opening, gone, unreadable, empty, a texture it cannot draw, everything off screen, and the selected entity off screen are eight different sentences. The last two arrived with the camera, and they *replace* the count rather than joining it — see UG8 for why that is layout as well as prose.
 - `kernel-2d/editor/panels/TexturePanel.tsx` — U15 and the single-texture preview, moved out of the Viewport when the Viewport became the scene.
 - `kernel-2d/editor/panels/TextureOverlay.tsx` — U16. Frame guides, the strip no frame reaches, the pivot marker, and the caption that says in words what the shading says in pixels.
-- `kernel-2d/editor/panels/SceneOverlay.tsx` — U16 again: the selected entity's outline, the crosshair on its position, wherever the camera has put the corner the scene's y counts up from, and which entities are actually on the canvas.
+- `kernel-2d/editor/panels/SceneOverlay.tsx` — U16 again: the selected entity's outline, the crosshair on its position, the line a locked grab runs along (U33), wherever the camera has put the corner the scene's y counts up from, and which entities are actually on the canvas.
 - `kernel-2d/editor/panels/HierarchyPanel.tsx` — what is in the open scene, in draw order, and the four actions that change it — every one a transaction and none of them aware undo exists.
 - `kernel-2d/editor/panels/EntityInspector.tsx` — the second inspector, and where a D5 reference is written.
 - `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
 - `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
 - `kernel-2d/editor/shell/scene-view-context.tsx` — U18 and U19: the scene renderer, why two is a bounded number rather than a habit, one camera per scene for the life of the window, and the three conditions a scene satisfies before it is framed.
-- `kernel-2d/editor/shell/useSceneGestures.ts` — U20, U21 and U31: left-press to pick, place or stamp, middle-drag, space-drag, wheel-to-zoom, the framing keys, Esc, and the order they take priority in.
+- `kernel-2d/editor/shell/useSceneGestures.ts` — U20, U21, U31 and U33: left-press to pick, place or stamp, middle-drag, space-drag, wheel-to-zoom, the framing keys, `G` and its axis keys, `Shift-D`, Esc, and the order they take priority in.
+- `kernel-2d/editor/shell/useDuplicateEntity.ts` — U33's fifth point: one answer to what a copy is, called by the Hierarchy's button and by the viewport's key.
 - `kernel-2d/editor/shell/drawn-entities.ts` — every question asked about the picture the renderer drew: what an entity covers, what is on the canvas, and what is under the pointer. One set of rectangles, so a click cannot disagree with an outline.
 - `kernel-2d/editor/shell/open-scene.tsx` — which scene is open and the document behind it; one fetch that both decides a `.json` is a scene and puts it in the store.
 - `kernel-2d/editor/shell/scene-assets.tsx` — U9 for a set whose membership changes: every texture a scene refers to, resolved once per window.
@@ -437,9 +456,9 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it. The rename control operates on one file for the same reason.
 - Dragging a file inside the Assets tree to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one.
 - Deleting a folder. Renaming and moving take folders; deleting is one file at a time (`editor-kernel` D22).
-- A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons, and nowhere else.
+- A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons; `G`, `X`, `Y` and `Esc` are named by the caption while a grab is running; `Shift-D` is in the Duplicate button's tooltip. Nowhere else, and there is no list of them in the editor.
 - Two scenes open at once. `openScene` is one path.
 - The panel menu and saved layouts (UG4).
-- A keyboard shortcut registry. There is exactly one handler (U13), and one does not need a registry.
+- A keyboard shortcut registry. There are two window-level handlers — the undo one (U13) and the viewport's (U20, U33) — and they do not overlap: the first is modifier-only, the second is bare keys guarded by UG7's typing check. Two do not need a registry; a third that wanted a bare letter would be the moment to think again.
 - Anything that shows the undo stack — a history panel, an Edit menu, an "Undo <label>" caption. The labels exist and `peekUndo`/`peekRedo` expose them; nothing reads them yet.
 - Any control over a level while it is running: a camera that can be moved, a pause, a step, a frame counter, or editing that the running level picks up. Play inherits the editing camera and freezes it, and the rest of the editor goes read-only until Stop.

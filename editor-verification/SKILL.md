@@ -209,6 +209,16 @@ The definition of done says visual changes are screenshot-verified, and for a lo
 
 **What it is deliberately not: a baseline.** Nothing compares these PNGs to a stored copy. A screenshot-diff suite fails on font rendering, on driver versions and on every deliberate change, and its failures cost more attention than the bugs it catches. The pictures are for a human to look at, and the folder is git-ignored. _[earned 2026-08-14]_
 
+### V30: "It left no undo step" is proved by pressing Ctrl-Z and watching something *else* be reversed
+
+A gesture that can be called off — grab, move, `Esc` (`editor-kernel` D7) — makes a claim that no assertion about the entity can reach. Put the entity back and assert its position, and the natural wrong implementation passes: writing the remembered position back as one more edit ends at exactly the same document. The bug is not in the level, it is in the *next* press of Ctrl-Z, which that implementation spends on a step that reverses nothing.
+
+So the test needs a change made **before** the gesture and unrelated to it: move the entity by five, then grab it, move it, and cancel — then press Ctrl-Z once. The assertion is that the *first* move was reversed. The wrong implementation leaves the entity five units along, which is a red test with an obvious cause.
+
+The shape generalises to anything claiming to be invisible to a history: **assert on the operation that should be next in line, not on the state the invisible one touched.** A test written against the state alone is green for the wrong reason (W7).
+
+Two smaller ones earn their place beside it, and both are one line: the keyboard gesture started with the pointer deliberately far from the thing it moves — which is the whole reason such a gesture exists, and the assertion an implementation that quietly needed a press over the sprite would fail — and the same gesture with the wheel spun and the framing keys pressed mid-flight, asserting the camera did not move. _[earned 2026-08-14]_
+
 ## Gotchas
 
 ### W21: A geometry test calibrated to the panel size it was written at goes red on a stylesheet
@@ -407,6 +417,7 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/runtime/scene-schema.test.ts` and `kernel-2d/tests/runtime/scene-coordinates.test.ts` — V7 for the scene format, the y-up arithmetic under the pivot assertion, and the camera held to the four properties its acceptance criteria are made of.
 - `kernel-2d/tests/editor/scene-camera.spec.ts` — V19: a camera asserted without a pixel, one test per acceptance criterion, and the settled gesture helpers of W13.
 - `kernel-2d/tests/editor/drag-place.spec.ts` — V20: picking and placing asserted in the level's own units, with the zoom-invariance test that catches a camera-blind implementation.
+- `kernel-2d/tests/editor/grab-move.spec.ts` — V30: the keyboard grab, its axis locks, and the cancel that has to leave the undo history alone. The two load-bearing ones are named at the top of the file.
 - `kernel-2d/tests/editor/snap-place.spec.ts` — V20 again for a settable grid and a mode that places on every click: the offset test that decides whether the snap is worth having, the three-clicks-without-touching-anything-else test of `editor-ui` U31, and the click-in-the-middle-of-the-canvas test that is this feature's camera-blindness catcher.
 - `kernel-2d/tests/shell/snap.test.ts` — the same arithmetic as properties: a sloppy row of clicks landing exactly one step apart, idempotence, and what actually reaches the file.
 - `kernel-2d/tests/shell/drawn-entities.test.ts` — what can be clicked, held to being the same rectangle the outline is drawn from.
