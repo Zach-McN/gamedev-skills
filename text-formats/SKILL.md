@@ -141,6 +141,14 @@ _[earned 2026-08-12, recorded after the first parity drill regenerated four form
 
 Anything under a `texture` key that is not an `AssetRef` is skipped, not reported, on the same grounds as `assetRefsOf`: the walk answers "what art does this name", and a malformed reference names none. Worth knowing the boundary: `COMPONENT_REFERENCE_FIELDS` (rename fixups) does **not** walk this deep — a texture moved from inside the editor still fixes up sprite references but not ones nested in game components, which the id witness then reports at load instead. Generalising the fixup is a decision for the day it is somebody's real problem. _[earned 2026-08-14, first demanded by tower-defense projectiles]_
 
+### T20: A component field named `scene` names a scene the game can travel to — the mirror of T19, minus the id
+
+`sceneRefsOf` (beside `textureRefsOf` in the scene schema) walks an entity's components at any depth and collects every non-empty string under a key called `scene`. Its consumer is the export closure (`editor-kernel` D13, amended): a game whose content holds doors — a level-select banner's `portal.scene`, a Ground's `home.scene` — ships every place those doors can reach, transitively, without the kernel learning what a portal is.
+
+**Reason:** the door seam (`editor-kernel` D30) made travel a thing authored *content* can express, and the moment content can name a scene, tooling that answers "what does this game reach" must read the same naming or ship broken folders. One agreed field name is the whole contract, exactly as T19 — and it was, again, already the convention before it was a rule: the kernel's own story carrier and every game component naming a scene had used the key `scene` unprompted.
+
+**Why a bare string where T19 collects an `AssetRef` pair:** a scene is a JSON document, so it has no `.meta` to hold an id, and its stable name *is* its project-relative path — the same name it wears in `project.json`, in the loader, and on the host's disk. There is no second naming to pair and therefore no witness to check; a wrong path is refused by whoever loads it, by name. A malformed or empty value names nothing and is skipped, on T19's grounds. _[earned 2026-08-14, demanded by tower-defense's level select]_
+
 ### T17: The `format` literal is data, so it belongs in the skills where a function name does not
 
 The literals are `kernel2d.asset-meta`, `kernel2d.scene`, `kernel2d.prefab`, `kernel2d.project`, and the served-answer formats spell themselves the same way (`kernel2d.document-view`). Every document on disk carries one (T1), and the service's registry is keyed on them (T13).
