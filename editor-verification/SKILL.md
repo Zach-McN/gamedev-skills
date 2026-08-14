@@ -453,7 +453,7 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 - `kernel-2d/tests/store/documents.test.ts` — the transaction API on its own (V15, V16): one stack across two files, what merges into one undo step, and every way a re-read can be stale.
 - `kernel-2d/tests/editor/texture.spec.ts` — V17 and V18: a canvas feature asserted without comparing a single pixel, and the settle helper that keeps a layout-derived number honest.
 - `kernel-2d/tests/editor/scene.spec.ts` — the same instruments one layer up: where an entity was drawn, whether a feet-pivoted sprite stands on its position, and a missing texture named rather than drawn as nothing.
-- `kernel-2d/tests/editor/hierarchy.spec.ts` — add, delete and reorder, each of them taken back by one press of Ctrl-Z. The behavioural proof that document-level undo covers a tool nobody wrote undo for.
+- `kernel-2d/tests/editor/outliner.spec.ts` — add, delete and reorder (by the arrows and by dragging a row), each of them taken back by one press of Ctrl-Z. The behavioural proof that document-level undo covers a tool nobody wrote undo for.
 - `kernel-2d/tests/editor/restore-project.ts` — V14 for every file the editor can write, shared by every spec that changes the sample folder.
 - `kernel-2d/tests/editor/panels.ts` — W12: bringing a tab forward before asserting against it.
 - `kernel-2d/tests/runtime/scene-schema.test.ts` and `kernel-2d/tests/runtime/scene-coordinates.test.ts` — V7 for the scene format, the y-up arithmetic under the pivot assertion, and the camera held to the four properties its acceptance criteria are made of.

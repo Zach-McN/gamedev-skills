@@ -354,6 +354,23 @@ Two small things the Assets panel wanted once it was a file browser, and each ha
 
 Both are window state above the layout, beside the view and the folder (U34): never serialized, never in a document, gone on reload. _[earned 2026-08-14]_
 
+### U37: Dragging a row to reorder is a second door on the arrows' edit, and the two drag surfaces are deaf to each other by marker type
+
+The scene panel was renamed **Outliner** (it was Hierarchy until 2026-08-14 — entries above that say Hierarchy mean this panel), and its rows became draggable as an alternative to the `↑` `↓` buttons. The shape that kept it small:
+
+**One implementation of the reorder, two ways to ask for it** — the same rule as Duplicate and `Shift-D` (U33). The drag ends in the identical `'Reorder entity'` transaction the arrows use, so one drag is one press of Ctrl-Z and no undo code was written. What the drag adds is only the question "which slot is under the pointer": a row is divided at its midline into before and after, below the last row means the end, and **the slot is answered by one function asked on every `dragover` (for the line between rows) and again on the drop (for the edit)** — two readings of one rule, so the promise and the act cannot disagree about where "here" is.
+
+**A slot where letting go would change nothing answers null.** No line is drawn there — a line is a promise that something will happen — and no transaction is opened, which the store would discard anyway (`editor-kernel` D7 drops empty patch sets; the guard here is so the *line* tells the truth, not to protect undo).
+
+**The row drag wears a marker type of its own** (`application/x-kernel-2d-entity-row`, beside U35's asset type), and each surface's `dragover` answers only to its own marker. A row carried over the picture places nothing and a file carried over the list reorders nothing, by construction rather than by checks at the drop — the same reasoning that keeps an OS file drag inert (U35).
+
+Two practicalities:
+
+1. **The dragged row's id rides in a ref, never in state.** Nothing needs to *render* from "what is being dragged" — only "where it would land" is drawn — and setting state inside `dragstart` re-renders the source row at the exact moment Chromium decides whether to begin the drag, which is the documented way an HTML5 drag gets silently cancelled. Chosen up front on that knowledge rather than earned from the failure here.
+2. **The insertion line is drawn outside the flow** — an absolutely positioned edge on the row, `pointer-events: none` — so it cannot move the rows it sits between (a target that shifts under the gesture aiming at it is UG13's bug) and cannot fire `dragleave` flicker of its own. It wears the accent for the drop-ring's reason (U32): the most current thing on screen for as long as it is there.
+
+The test aims at the quarter-heights of a row, never its middle: the midline is the before/after boundary, and a boundary is not a location (UG11). _[earned 2026-08-14]_
+
 ## Gotchas
 
 ### UG14: Chromium navigates on the *release* of a mouse's back button, so cancelling the press looks like it worked
@@ -476,14 +493,14 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/TexturePanel.tsx` — U15 and the single-texture preview, moved out of the Viewport when the Viewport became the scene.
 - `kernel-2d/editor/panels/TextureOverlay.tsx` — U16. Frame guides, the strip no frame reaches, the pivot marker, and the caption that says in words what the shading says in pixels.
 - `kernel-2d/editor/panels/SceneOverlay.tsx` — U16 again: the selected entity's outline, the crosshair on its position, the line a locked grab runs along (U33), wherever the camera has put the corner the scene's y counts up from, and which entities are actually on the canvas.
-- `kernel-2d/editor/panels/HierarchyPanel.tsx` — what is in the open scene, in draw order, and the four actions that change it — every one a transaction and none of them aware undo exists.
+- `kernel-2d/editor/panels/OutlinerPanel.tsx` — the Outliner (named Hierarchy until 2026-08-14; older entries here say Hierarchy): what is in the open scene, in draw order, and the actions that change it — every one a transaction and none of them aware undo exists. Reordering has two doors, the arrows and dragging a row (U37).
 - `kernel-2d/editor/panels/EntityInspector.tsx` — the second inspector, and where a D5 reference is written.
 - `kernel-2d/editor/panels/PrefabInspector.tsx` — the inspector body a prefab document gets: what a thing is, the button that puts one in a level, and the note on why placing is an edit to the level rather than to the prefab.
 - `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
 - `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
 - `kernel-2d/editor/shell/scene-view-context.tsx` — U18 and U19: the scene renderer, why two is a bounded number rather than a habit, one camera per scene for the life of the window, and the three conditions a scene satisfies before it is framed. Also `useDrawScene`: the request key that distinguishes two derivations of one level, and the answer to U27.
 - `kernel-2d/editor/shell/useSceneGestures.ts` — U20, U21, U31 and U33: left-press to pick, place or stamp, middle-drag, space-drag, wheel-to-zoom, the framing keys, `G` and its axis keys, `Shift-D`, Esc, and the order they take priority in.
-- `kernel-2d/editor/shell/useDuplicateEntity.ts` — U33's fifth point: one answer to what a copy is, called by the Hierarchy's button and by the viewport's key.
+- `kernel-2d/editor/shell/useDuplicateEntity.ts` — U33's fifth point: one answer to what a copy is, called by the Outliner's button and by the viewport's key.
 - `kernel-2d/editor/shell/drawn-entities.ts` — every question asked about the picture the renderer drew: what an entity covers, what is on the canvas, and what is under the pointer. One set of rectangles, so a click cannot disagree with an outline.
 - `kernel-2d/editor/shell/open-scene.tsx` — which scene is open and the document behind it; one fetch that both decides a `.json` is a scene and puts it in the store.
 - `kernel-2d/editor/shell/scene-assets.tsx` — U9 for a set whose membership changes: every texture a scene refers to, resolved once per window.
@@ -524,10 +541,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Gizmos for rotate and scale, a marquee, dragging a pivot or a frame grid, and cycling through overlapping sprites with repeated clicks. Position is the one thing a viewport can change; everything else is the Inspector's, deliberately.
 - A grid or rulers *drawn*. The snap is settable (U31) and nothing renders it, so a board lines up to lines nobody can see. The overlay that would draw them is U16-shaped work and has not been asked for.
 - Painting by dragging: a stroke that stamps one copy per cell crossed. Clicking is quick enough, and a stroke is the first step toward a brush, a rectangle tool and an eraser — none of which the kernel has been asked for and all of which are what `genre-spinup` S1 sends at a game folder.
-- Dragging inside the Hierarchy tree, and nesting. The list is flat and reordering is two buttons.
+- Nesting in the Outliner. The list is flat; a row drags to *reorder* (U37), never to become a child of another.
 - Multi-selection. `Selected` is a union of one thing; making it a list is a change to that type and to every reader of it. The rename control operates on one file for the same reason.
 - Dragging a file inside the Assets tree or grid to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one. A file drags *into the level* (U35) and nowhere else.
-- Any drop target but the picture. Not the Hierarchy, not an entity in it, and not an entity in the viewport — dropping a texture *onto* a sprite to re-point it is a different operation (changing a reference) wearing the same gesture as creating one, and the Inspector's picker already owns it.
+- Any drop target for a *file* but the picture. Not the Outliner (its rows drop into it, but never an asset — the two drags carry different marker types, U37), not an entity in it, and not an entity in the viewport — dropping a texture *onto* a sprite to re-point it is a different operation (changing a reference) wearing the same gesture as creating one, and the Inspector's picker already owns it.
 - Accepting a file dragged in from outside the editor. The marker type on the drag is what an OS file drag does not have, so it is refused by construction rather than by a check; copying a file into the project folder is the sidecar's business and nobody has asked for it.
 - Thumbnails on the icon view's tiles (U34). Every tile wears a folder or a blank-page glyph. A picture of the art costs a decode per file in the folder and has decisions of its own — when they are read, what they are cached on, what a sound's thumbnail even is — so it is a feature rather than a detail of the view.
 - Sorting, searching or filtering the icon view, and a tile size. The folder's own order (`editor-kernel` D4's rows, folders first) is the only order, and the tiles are one size.
