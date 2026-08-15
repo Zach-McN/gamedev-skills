@@ -194,7 +194,17 @@ contract (`REMAKE-PARITY.md`, AI's) is the exhaustive checkable extraction: ever
 constant, hitbox, interaction rule, effect recipe and screen element, with the reference
 itself committed read-only in `docs/reference/`. "1:1" is a checklist, not a vibe — and
 the feel numbers are deliberately *not* "left to build sessions", which is the line where
-a remake spec differs from a from-scratch one. _[earned 2026-08-14, second spin-up]_
+a remake spec differs from a from-scratch one.
+
+**Extraction beats transcription, and the reference artifact extracts itself.** The
+content phase confirmed it: art was pulled by running the reference in a browser and
+asking each sprite's own canvas for its PNG (`toDataURL`), and the level by serializing
+its own data object — not by re-reading drawing code or copying arrays by hand. What runs
+is the ground truth; anything transcribed from source is a chance to be wrong about what
+runs. The throwaway generator (S6) then converted through the kernel's schemas, and the
+one honest translation left — the reference's y-down grid to the kernel's y-up scene —
+was verified by looking at the drawn level, which is the only check that question has.
+_[earned 2026-08-14, second spin-up]_
 
 ## Gotchas
 

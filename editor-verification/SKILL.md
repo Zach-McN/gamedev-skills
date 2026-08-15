@@ -252,6 +252,23 @@ A test that asserts nothing and simply writes a full-window screenshot to its ou
 
 ## Gotchas
 
+### W23: A viewport screenshot taken before textures finish loading reads as a data bug, and the caption is the honest wait signal
+
+A freshly opened scene shows "0 entities drawn, 242 with nothing to draw" for the first
+seconds while textures stream in — with **zero** problem notes, because loading is not a
+problem. A screenshot taken then is indistinguishable from a genuinely broken scene
+(missing sprites, unresolved prefabs, bad references all produce the same caption), and it
+cost this session a full false-alarm debugging pass through the reference witness
+machinery, the asset routes and the problem pipeline before a re-run drew everything fine.
+
+**Fix/policy:** anything that screenshots or asserts on the viewport after opening a scene
+waits on the caption, not on a timer — `N entities drawn` with no `nothing to draw` in it
+(and if some entities legitimately have no sprite, wait for the drawn count instead).
+The caption is written from the renderer's own report, so it is the ground truth the
+screenshot needs, available as text. A fixed `waitForTimeout` was tried first and passed
+once, then raced. Same family as W18 and W10: wait for the *editor* to say it is done,
+never for wall-clock. _[earned 2026-08-14, second spin-up]_
+
 ### W22: A poll that parses a file the editor is writing can catch half of it, and the parse error fails the test instead of waiting
 
 `expect.poll` retries on a value that doesn't match, **not** on a callback that throws — a throw is the failure, immediately. So a poll built as `JSON.parse(fs.readFileSync(file))` over a file the sidecar writes is a race: the read can land mid-write, the file is present but incomplete, and the test dies intermittently with `SyntaxError: Unexpected end of JSON input` — in a test that was otherwise about to pass. It first showed up in `new-scene.spec.ts`; a sweep found the same shape in four more polls across `drag-from-assets`, `drag-place`, `snap-place` and `scene` specs.
