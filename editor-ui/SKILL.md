@@ -434,6 +434,28 @@ So the press handler computes a `SelectMode` (`replace | add | remove`) and hand
 
 **And the key that acts on the result goes in the same hook, not in a listener of its own.** `Delete` needed four guards — not while typing, not during a grab, not while a level runs, not without a scene — and `useSceneGestures` had already answered all four for `Shift-D`, on a **window** listener (which is why `Shift-D` has always worked with the hand in the Outliner). A second window listener would have re-derived all four and then raced this one. The smell is general: *before adding a global key handler, check whether an existing one already has the guards it needs* — the guards, not the topic, decide where it lives. _[earned 2026-08-15]_
 
+### U42: A mode and the modifier that overrides it are one exclusive-or, computed in one place — and the modifier means *the other thing*, not "off"
+
+The snap gained a toggle, and the key that had meant "ignore the snap for this drag" became the key that **inverts** it. Those are not the same feature, and the difference is the whole entry: with snapping off, the modifier now puts the entity *on* the grid. That half is the one nobody thinks of and the one people actually use — lay a level out by eye, then hold the key for the one piece that must line up.
+
+Three things follow, and each is a bug avoided:
+
+1. **`setting.on !== held` lives in one function**, which every placement path calls — drag, keyboard grab, file dropped on the canvas, prefab stamped by a press. Spelled out per call site it is N chances to write the inversion backwards, and backwards is **silent**: things land on the grid when you asked for anywhere, which reads as the toggle being stuck rather than as a modifier being inverted. The payoff showed up immediately — switching the toggle off changed all four ways of placing something, including the two nobody re-tested.
+2. **The geometry function must not consult the toggle.** `snapTo` asks only "where is the nearest grid position"; asking `on` there as well makes the inverted case *unreachable*, because it has to snap to a grid the toggle says is off. Worth a comment at the function saying so, because re-adding the check looks like tightening.
+3. **Rename the boolean when its sense flips.** The argument was `free` while the old key meant free; it is `invert` now. A boolean whose meaning has inverted and whose name has not is the single most reliable way to make the next reader write case 1 backwards.
+
+**Apply it on the keypress, not on the next movement.** Same argument the axis lock in this codebase already makes, and it bites harder here: a keyboard grab routinely sits with the pointer *completely still* while the eye decides, so a modifier that waited for a wobble reads as not having worked at all. That needs the gesture layer to remember the travel of the move in progress so a keypress can replay it under the new modifier — a small ref, and the thing that makes the feature feel instant in both gestures rather than only in the one where the hand is already moving.
+
+**Check the modifier against every other reading of that key on the same surface.** `Ctrl` here also means "take this entity out of the selection" on a press. They coexist only because a modified press deliberately starts no drag, so the snap reading is reachable exclusively *inside* a move a plain press began. That is a fact to verify and write down, not to hope for. _[earned 2026-08-15]_
+
+### U43: A control disabled as a side effect of a readiness signal flickers — disable it on the intent instead
+
+Play was greyed while an entity was being moved, but only incidentally: the condition was "the picture on screen is a picture of the level as it is now", which is false on every mouse movement and **true again in every pause between them**. So the button flickered — worst of all during a keyboard grab, where the hand is often still for seconds and the move is nowhere near finished.
+
+**Readiness is sampled; intent is not.** Any control gated on "has the async thing caught up" will strobe for exactly as long as the human is doing something intermittent, and no amount of debouncing fixes it, because the signal is *correct* — it is answering a different question. The fix is to add the intent as its own clause (`gesture === null`) and let the readiness clause keep meaning what it means.
+
+Two tells that this is the bug you have: the control is correct on the frame the gesture starts (so any assertion made straight afterwards passes), and the complaint is about *flicker* rather than about the state being wrong. **The test therefore has to wait** — start the gesture, hold still well past the point the renderer has certainly caught up, and assert the control is still disabled. A version without the wait passes against the bug it was written for, which is worth checking by reverting the fix and watching the test fail. _[earned 2026-08-15]_
+
 ## Gotchas
 
 ### UG15: A listener effect that reads `ref.current` arms against null when its element renders later — and every other code path heals it, so only the first gesture of a session is unguarded

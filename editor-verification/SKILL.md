@@ -250,6 +250,10 @@ A test that asserts nothing and simply writes a full-window screenshot to its ou
 
 **One per picture that can look wrong on its own, and no more.** The rule began as "exactly one" (the shell), was amended to "three" (the shell, the texture tab, the scene), and by 2026-08-14 the suite held one in nearly every feature spec — because nearly every feature since has put something genuinely new on screen: a placed prefab, a running level, an exported game served off the disk, a resized split view. The count was dropped rather than corrected a second time (`editor-kernel` G3: a number in prose ages silently); the test for the next spec is unchanged — **does this feature produce a picture that cannot be judged from any existing screenshot?** A screenshot per *test* is still noise, and a screenshot of something with no picture in it always was. _[recorded 2026-08-12 without an id or date; regularised and re-grounded against the suite 2026-08-14]_
 
+**It paid for itself in a way worth recording, because it argues for actually *looking* at the picture rather than merely producing it.** The snap controls' new picture was set to an interval of `16` and showed `1`: Chrome draws a `<datalist>`'s dropdown indicator *inside* the input, out of the same width the digits have, and the field had been sized for four digits before it had a list. Nothing failed. The value was correct in the store, correct in the data attribute the tests assert on, and correct in every assertion in the suite — the *field* was just too narrow to show it, and a human would have reported it as the control not taking the number.
+
+So: **a screenshot that is written and never looked at is a screenshot that does not exist.** Take one for any control row you change, and read it in the same session — a clipped field, a wrapped bar and a swallowed label are all invisible to attribute assertions by construction, since the attribute is exactly the thing that is still right. _[earned 2026-08-15]_
+
 ## Gotchas
 
 ### W23: A viewport screenshot taken before textures finish loading reads as a data bug, and the caption is the honest wait signal
