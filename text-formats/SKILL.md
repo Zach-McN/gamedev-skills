@@ -68,6 +68,19 @@ Every object in `AssetMetaSchema` is `z.looseObject`, at every level, so keys th
 
 The rule generalises. **A format the editor reads and later rewrites is loose. A format the editor only ever produces — a served answer, a computed view — stays strict**, because there is no human authorship in it to protect and strictness there catches a producer emitting a field nobody declared. `MetaViewSchema` is strict for exactly that reason while the document it carries is not. _[earned 2026-08-11, Zod 4.4.3]_
 
+### T21: A field added to a format anything has already written is **optional and never defaulted**, and its absence is the old meaning
+
+`opacity` joined the scene format's sprite component (`editor-kernel` D34) as `z.number().finite().optional()`, with "absent means fully solid" written on the field rather than into a default.
+
+**Reason: a parse-time default is a rewrite of every document that never mentioned the field.** The editor rewrites a document from the object it parsed (T9), so a default lands on disk the next time anything touches the file — every entity in every level gaining `"opacity": 1` to say what it already said. That is a whole-project diff expressing nothing, and it buries any real change made the same day. The same argument bans "helpfully" normalising an absent value anywhere between the parse and the write.
+
+Two consequences worth stating, because both were nearly got wrong:
+
+- **A reader supplies the fallback, at the point of use, once.** `opacityOf` in the entity layer answers 1 for a sprite that never mentioned it; nothing else in the kernel has an opinion.
+- **Every writer that rewrites the component must spread it.** A control that assigns `{ texture }` wholesale silently deletes the new field — the editor's texture picker did exactly that until it was changed to spread. T9's rule is usually stated about *unmodelled* keys; this is the same rule about a key the schema does model and one writer forgot.
+
+The general test for a new field: **would a document that has never heard of this field be rewritten by adding it?** If yes, it is optional. _[earned 2026-08-15, Zod 4.4.3]_
+
 ### T10: A schema lives with the layer that ships, not with the process that writes it
 
 The `.meta` schema was written by the filesystem service and lived beside it, and moved to `runtime/formats/` the first time the game runtime had to read import settings. **Reason and the rule to apply going forward:** ask "which layers read this?" when the format is created, and put it in the one that ships — a development-only process importing a shipping module is fine, the reverse is not (`editor-kernel` D1/D20). A schema compiled by more than one TypeScript project may have relative imports, and they must be written **`./x.js`** — the extensionless spelling only satisfies the browser project (`editor-kernel` D20, corrected 2026-08-12). Both are a one-line decision at creation and a cross-cutting move afterwards. _[earned 2026-08-11]_
