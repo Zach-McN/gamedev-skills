@@ -254,6 +254,8 @@ A test that asserts nothing and simply writes a full-window screenshot to its ou
 
 So: **a screenshot that is written and never looked at is a screenshot that does not exist.** Take one for any control row you change, and read it in the same session — a clipped field, a wrapped bar and a swallowed label are all invisible to attribute assertions by construction, since the attribute is exactly the thing that is still right. _[earned 2026-08-15]_
 
+**It paid twice, the same day, and the second one is a design fix rather than a CSS one.** The rotate gizmo's picture showed its caption clipped to `Turning 2 e…` — the angle, which is the number the hand is being steered by, was off the end of the bar. Clipping there is *by design* (the bar is one line, with the full sentence in the tooltip), so nothing was broken and no rule was violated; the sentence was simply ordered subject-first like every other caption. Putting the number first made it survive: `45° — turnin…`. **When a bar clips by design, the question the screenshot answers is not "does it fit" but "what is left when it doesn't"** — and that is an ordering decision, invisible to every test and to any amount of reading the source. _[extended 2026-08-15]_
+
 ## Gotchas
 
 ### W23: A viewport screenshot taken before textures finish loading reads as a data bug, and the caption is the honest wait signal
