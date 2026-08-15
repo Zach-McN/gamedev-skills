@@ -170,6 +170,32 @@ Not gated by G5, and this is the distinction: the fence asks whether a *noun in 
 genre spec* justifies a thing built for that game. The launcher is the same file for
 every game and is how the editor gets opened at all. _[earned 2026-08-13]_
 
+### S8: A remake's fence is drafted from the reference artifact, and approval is the marker coming off
+
+The second spin-up (`games/platformer-2d`, 2026-08-14) was the first **remake**: the
+human's design statement arrived not as prose but as a working game — a single-file HTML
+platformer to be rebuilt 1:1 on the kernel. Two things had to be decided that the first
+spin-up never posed, and both resolved with machinery that already existed.
+
+**Drafting the human's document is AI work, and the handover is the marking rules run
+backwards.** The genre spec stays the human's file — but when the design already exists as
+a playable artifact, making the human transcribe it into prose is make-work. So the draft
+is written *from* the reference, carries the `generatedBy` marker and a banner saying
+nothing is built against it, and approval is the human editing it and **deleting the
+banner and the marker**. From that moment the standing rule — an unmarked file is
+human-authored and never modified — protects it automatically. Ownership transfer needed
+no new rule; it is checkable by the same mechanism that protects every other human file.
+
+**A remake gets two documents, because "what the game is" and "what it must feel like" have
+different owners and different failure modes.** The fence (`GENRE-SPEC.md`, human's) holds
+the nouns and — critically — the **Not in this game** list, which for a remake writes
+itself: everything the reference lacks, named so nobody helpfully adds it. The parity
+contract (`REMAKE-PARITY.md`, AI's) is the exhaustive checkable extraction: every feel
+constant, hitbox, interaction rule, effect recipe and screen element, with the reference
+itself committed read-only in `docs/reference/`. "1:1" is a checklist, not a vibe — and
+the feel numbers are deliberately *not* "left to build sessions", which is the line where
+a remake spec differs from a from-scratch one. _[earned 2026-08-14, second spin-up]_
+
 ## Gotchas
 
 ### SG1: A game folder is a git repo, so the Assets panel shows the human tooling files
@@ -207,11 +233,23 @@ is outside the JS toolchain is exempt from whatever the repo normalises, and the
 exemption has to be written down beside the normalisation rule or the checkout quietly
 undoes the generator. _[earned 2026-08-13]_
 
+### SG4: A fresh game repo cannot commit until it is told who the human is
+
+Git identity on this machine is **per-repo local config** — there is no `--global`
+`user.name`/`user.email`, so the first commit in a new game repo fails with "Author
+identity unknown" even though every existing repo commits fine. Each existing repo carries
+the identity in its own `.git/config`. **Fix:** copy `user.name` and `user.email` from an
+existing game repo (`git config user.name` in `games/tower-defense` reads it) into the new
+one before the first commit. Worth doing in the same breath as `git init`, because the
+failure arrives at the end of the spin-up, after everything else worked. _[earned
+2026-08-14, second spin-up]_
+
 ## Contracts
 
 - `kernel-2d/scripts/launcher/write.ts` and `kernel-2d/scripts/marking.ts` — the launcher a game folder is opened by, and the marker both project-folder generators share (S7).
 - `games/tower-defense/docs/GENRE-SPEC.md` — the first genre spec, and the shape the rest should follow: what the game is, what the player does, the nouns, and an explicit **Not in this game** list. The last section is what makes it a fence rather than a wish list — G5 can only refuse something if the spec is willing to say no.
 - `games/tower-defense/CLAUDE.md` — the game-folder template: the ownership split, the fence, the local-skills rule, and a named statement of what does not run yet.
+- `games/platformer-2d/docs/GENRE-SPEC.md` and `games/platformer-2d/docs/REMAKE-PARITY.md` — the remake variant of the spec (S8): the fence drafted from a reference artifact, and the parity contract that makes "1:1" checkable. The reference itself sits read-only in `games/platformer-2d/docs/reference/`.
 - `gamedev/CLAUDE.md` — the workspace map (S3).
 - `kernel-2d/tests/architecture/boundaries.test.ts` — both boundaries as tests: the runtime/editor one (`editor-kernel` D20), and the repo one that keeps the kernel out of `games/` (SG2).
 - `games/tower-defense/package.json` and `games/tower-defense/tests/levels.ts` — the shape of a game folder's own verification (S5): its own runner, pinned to the kernel's version, and fixtures built as entity lists rather than as files.
