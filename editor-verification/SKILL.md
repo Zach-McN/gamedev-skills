@@ -486,6 +486,14 @@ It bites specifically in canvas work, because a locator is not available: there 
 
 **Fix/policy:** press the key around the click — `keyboard.down('Shift')`, `mouse.click(…)`, `keyboard.up('Shift')` — which is what `drag-place.spec.ts` already did for Alt mid-drag. Wrap it in one helper per spec rather than inline, so the mistake can only be made once. The general shape is worth carrying past Playwright: **a test API that accepts an option it does not implement fails as a product bug**, so when a modifier-driven feature fails and its unmodified path works, suspect the harness before the code. _[earned 2026-08-15, first multi-select in the picture]_
 
+### W28: A test helper that *selects* something to measure it will quietly dismantle the selection the test is about
+
+The browser helper for "where is this sprite on screen" works by selecting the entity and reading the outline the renderer reported — which is correct, and is how several specs find a point to click. The moment multi-entity tests arrived it became a trap: called *after* building a selection of three, it collapses that selection to one, and the test then exercises the single-entity path while claiming to test the group.
+
+It failed usefully once and silently once, in the same file. The "a press inside the selection keeps it" test failed outright — two selected, one found. The "a press outside the selection" test **passed**, because the helper had already replaced the selection with the very entity the test was about to drag: it asserted the right thing about a state it had created by accident, and would have gone on passing if the feature were removed.
+
+**Fix/policy:** take every screen point *before* building the selection under test, and reuse it — and say so at the helper, since the hazard is invisible at the call site. The general rule: **a measuring helper with a side effect on the state being measured is only safe before the arrangement, never during it.** When a multi-entity test passes first time, check what the selection actually was at the moment of the gesture; the cheapest way is an attribute assertion (`data-scene-selected-count`) immediately before it, which is also the assertion that makes the accident impossible to repeat. _[earned 2026-08-15, first multi-entity move]_
+
 ## Contracts
 
 - `kernel-2d/tests/fixtures/project-fixture.ts` — the temp-project builder, `waitFor`, and `delay`. Everything filesystem-shaped in the suite starts here.
