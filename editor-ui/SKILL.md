@@ -320,7 +320,7 @@ The Assets panel gained the file-explorer view: a grid of tiles showing one fold
 
 **One press selects, two enters, and both halves ask `asset-rows.ts`.** The explorer's own split, and there is no improving on it: selecting is what the Inspector answers about, and a folder has to be selectable without being walked into. Both views get their rows from the same place (`editor-kernel` D4), so a `.meta` folds into its file's tile exactly as it folds into its row; two rules for what a folder contains would disagree the first time either changed, and the symptom is a file that exists in one view and not the other.
 
-What the view is *not*: not saved to disk, not in `project.json`, not per-project, and not in a document. A reload is back to the tree with everything shut, which is how the panel behaved before any of this existed. _[earned 2026-08-14]_
+What the view is *not*: not saved to disk, not in `project.json`, not per-project, and not in a document. A reload is back to the default view with everything shut. (The default was the tree when this was built; since later on 2026-08-14 it is the icon view, the tiles being the view a human parses fastest and the tree one cog press away.) _[earned 2026-08-14]_
 
 ### U35: A drag between two panels uses the browser's own drag for the *gesture* and the window's own state for the *payload*
 
@@ -371,7 +371,26 @@ Two practicalities:
 
 The test aims at the quarter-heights of a row, never its middle: the midline is the before/after boundary, and a boundary is not a location (UG11). _[earned 2026-08-14]_
 
+### U38: The panel menu lives on the one bar that cannot be closed, and it is a third derivation of the panel declaration
+
+The Windows menu — a button on the status strip listing every panel, a tick beside the ones on screen — is UG4's missing door. Four decisions in it:
+
+1. **It lives on the status strip because the strip is not a panel.** A "reopen a panel" control inside any panel is UG4 one level up: close that panel and the way back is gone with it. The strip is the one piece of the window that cannot be closed, which makes it the only correct home, not merely a convenient one.
+2. **The list is `PANELS` itself** — the same declaration that already produces the component registry and the opening layout (U1). A panel added to that file appears in the menu with no second list to forget. This is the third thing derived from the declaration, which is the payoff U1 promised.
+3. **Picking a panel is focus-or-spawn (`summon`), and a respawned panel lands as a tab in the active group** rather than at its old spot. The spot may have been closed along with it, and a tab the human can drag anywhere beats a guess about where it used to be. `bringToFront` stays separate and non-spawning: a *selection* wanting a tab forward is not the human asking for a closed panel back, and a layout that reopens panels because something was clicked is the layout changing itself unasked.
+4. **The dropdown copies the cog's mechanics** (U34's view menu): Escape handled on the menu's own subtree and stopped — the viewport owns Escape for calling off a grab (U33), and whichever thing is open should be the one that hears it — plus a window-level `pointerdown` that closes on a press anywhere else. Two of these menus now exist as two copies; a third wanting the same shell is the moment to lift it, not before (U28's restraint).
+
+Respawning a viewport-shaped panel is safe *because of* U15/U18: the renderer's canvas is held above the layout and adopted on mount, so closing and reopening the tab is the same teardown a tab drag already was, and no WebGL context is spent. _[earned 2026-08-14]_
+
 ## Gotchas
+
+### UG15: A listener effect that reads `ref.current` arms against null when its element renders later — and every other code path heals it, so only the first gesture of a session is unguarded
+
+The side-button guard (UG14) was attached in an effect whose first line was `const element = surface.current; if (element === null) return`. The Assets panel shows "Reading the project folder…" before the browsing area exists, so on the effect's first run the ref was null and the guard armed against nothing. The effect's deps — the view, the trail's callbacks — all change on ordinary use, and any of them re-runs the effect and arms it for real.
+
+**That healing is what made it invisible.** Every browser test switched views or walked folders before pressing the side buttons, so the tests' own setup armed the guard they were testing. The hole only opened when the icon view became the *default*: a session's very first side-button press, before anything else was touched, reached an unguarded surface — and Chromium navigated the editor to `about:blank`. UG14's exact blank-window symptom, arriving through a different hole, found by the one test that presses back before doing anything else.
+
+**Fix/policy:** an element a listener effect needs is passed as **state** (callback ref into `useState`), so the element's appearance is itself a dependency and the effect re-runs when it mounts. A plain ref remains right only for lazy reads inside event handlers (the split handle reads its ref mid-drag and never in an effect). Worth checking on sight: any effect beginning `const el = ref.current; if (el === null) return` where the element can render after the first commit — the tell is a guard or subscription that works everywhere except a freshly loaded page. Sibling of UG5: both are state read at effect time answering for a render that has already moved on. _[earned 2026-08-14, React 19.2.8]_
 
 ### UG14: Chromium navigates on the *release* of a mouse's back button, so cancelling the press looks like it worked
 
@@ -469,6 +488,8 @@ The dev server's default host resolves to `::1`, so anything looking for the edi
 
 Dockview tabs render a close affordance by default, and the shell has no panel menu and no layout persistence, so a closed panel is gone until the page is reloaded. Reloading restores the default layout, which makes this shallow rather than dangerous — but it is a real dead end for a human who does not know that. **Fix/policy:** it is fixed by the feature that adds a panel menu plus saved layouts, not by hiding the button; hiding a control while its keyboard and context-menu paths still work is worse than leaving it visible. Until then, say so in the hand-off. _[earned 2026-08-11]_
 
+**Half fixed 2026-08-14: the panel menu exists** — the Windows menu on the status strip (U38) reopens any closed panel, so the dead end is gone. Layout persistence is still the other half: the *arrangement* resets on reload, and that remains the feature saved layouts will be. _[amended 2026-08-14]_
+
 ## Contracts
 
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
@@ -476,7 +497,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now. Also the wrapper that puts all but the Viewport out of reach while a level runs (U26).
 - `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, U22 (the control that puts a file in a human's project) and U29 (the one that renames, moves and deletes one). Also U34's frame: a bar, two halves either side of it, and the controls in a footer whose size cannot reach the browser (UG13).
 - `kernel-2d/editor/shell/asset-browsing.tsx` — U34's state and U36's: which view, the trail of folders and where along it you are, how the split is divided, which folders are open, and the rename hook U30 requires of all of them.
-- `kernel-2d/editor/shell/useFolderHistoryButtons.ts` — the mouse's side buttons, and UG14's three cancellations.
+- `kernel-2d/editor/shell/useFolderHistoryButtons.ts` — the mouse's side buttons, UG14's three cancellations, and UG15's rule that the surface arrives as state rather than a ref.
 - `kernel-2d/editor/panels/SplitHandle.tsx` — U36's divider: a fraction rather than a width, a hairline inside a strip, and the double-click that puts it back.
 - `kernel-2d/editor/panels/AssetGrid.tsx` — the icon view. One folder at a time, the same rows the tree gets, and the note on why thumbnails are a feature rather than a detail of this one.
 - `kernel-2d/editor/panels/AssetBar.tsx` — the breadcrumb and the cog behind which the three views live, including why the breadcrumb is not on screen when the tree is.
@@ -504,7 +525,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/drawn-entities.ts` — every question asked about the picture the renderer drew: what an entity covers, what is on the canvas, and what is under the pointer. One set of rectangles, so a click cannot disagree with an outline.
 - `kernel-2d/editor/shell/open-scene.tsx` — which scene is open and the document behind it; one fetch that both decides a `.json` is a scene and puts it in the store.
 - `kernel-2d/editor/shell/scene-assets.tsx` — U9 for a set whose membership changes: every texture a scene refers to, resolved once per window.
-- `kernel-2d/editor/shell/layout-context.tsx` — the handle on the docking layout, and the only thing that reaches it from outside a panel.
+- `kernel-2d/editor/shell/layout-context.tsx` — the handle on the docking layout: bringing a tab forward for a selection, and the Windows menu's focus-or-spawn (`summon`, U38), with the note on why the two stay different verbs.
 - `kernel-2d/editor/shell/useSelectionFocus.ts` — U18's third practicality: which tab comes forward for what was just clicked.
 - `kernel-2d/editor/shell/asset-meta-context.tsx` — U9's second case, and why a fetch with a side effect is never a panel's to own.
 - `kernel-2d/editor/shell/asset-kinds.ts` — what a file is (U11) and how to find it in the tree. Shared the moment a second panel needed the same answer.
@@ -528,7 +549,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/useProjectTree.ts` — the folder, kept current: the re-read of U5, the settle of U6, and the stale state of U7.
 - `kernel-2d/editor/shell/App.tsx` — the shell: status strip above, docking layout below, providers around both.
 - `kernel-2d/editor/shell/useSidecarStatus.ts` — how the editor learns which project it is connected to, and what it does when the answer stops coming (U3).
-- `kernel-2d/editor/shell/StatusStrip.tsx` — the connection line, including the `data-testid` hooks the browser suite reads.
+- `kernel-2d/editor/shell/StatusStrip.tsx` — the connection line, including the `data-testid` hooks the browser suite reads, and the Windows menu (U38).
 - `kernel-2d/editor/shell/shell.css` — the frame around the docking layout, and **every colour the editor has**: the palette tokens, what the accent is allowed to mean, and the block that repaints dockview's theme in those same tokens (U32).
 - `kernel-2d/vite.config.ts` — the editor's root folder, the `/api` proxy to the sidecar (U2), and the loopback binding (UG3).
 - `kernel-2d/scripts/editor-server.ts` — the editor window's host, port, and open-a-browser knobs, with their environment variable names.
@@ -553,7 +574,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Deleting a folder. Renaming and moving take folders; deleting is one file at a time (`editor-kernel` D22).
 - A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons; `G`, `X`, `Y` and `Esc` are named by the caption while a grab is running; `Shift-D` is in the Duplicate button's tooltip. Nowhere else, and there is no list of them in the editor.
 - Two scenes open at once. `openScene` is one path.
-- The panel menu and saved layouts (UG4).
+- Saved layouts (UG4's second half — the panel menu is U38, and the arrangement still resets on reload).
 - A keyboard shortcut registry. There are two window-level handlers — the undo one (U13) and the viewport's (U20, U33) — and they do not overlap: the first is modifier-only, the second is bare keys guarded by UG7's typing check. Two do not need a registry; a third that wanted a bare letter would be the moment to think again.
 - Anything that shows the undo stack — a history panel, an Edit menu, an "Undo <label>" caption. The labels exist and `peekUndo`/`peekRedo` expose them; nothing reads them yet.
 - Any control over a level while it is running: a camera that can be moved, a pause, a step, a frame counter, or editing that the running level picks up. Play inherits the editing camera and freezes it, and the rest of the editor goes read-only until Stop.
