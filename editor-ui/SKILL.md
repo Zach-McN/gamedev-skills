@@ -482,6 +482,16 @@ This is U9's split one level up, and the sibling of the shared-action hooks (`us
 
 **Gotcha, and it cost a red test:** React's synthetic `stopPropagation` stops the *native* event too. A row that swallowed its own `contextmenu` so the list's background handler would not close the window it just opened also hid the event from a window-level listener — which is how the existing spec asserts the browser's own menu was told no. The fix is to have the container handler **ask where the press landed** (`event.target.closest('[data-entity-id]')`) rather than have the row stop it. Worth reaching for generally: a container that must ignore presses on its children can read the target instead of asking the children to be quiet, and it leaves the event observable. _[earned 2026-08-15]_
 
+### U45: A control used once an afternoon does not hold room that is read all day — put it behind a menu, and give the room it leaves a sentence
+
+The Assets panel carried a permanent make-a-file row under the folder listing: a name field and two buttons, on screen always, used when a level is started. It moved behind two doors — a `+` on the bar, and a right-click on the empty part of the browser — which is U44's shape again (one anchor in the panel, `{ from: 'bar' } | { from: 'browser', at }`, so the two can never both be open). Three things generalise:
+
+1. **The two doors are the two places a hand already goes**, and they are not interchangeable-by-accident: a button on the bar is discoverable, a right-click on the background is what a file browser has trained everyone to try. Building only the second would be a feature nobody finds; only the first is a feature nobody reaches for.
+2. **Only the *background* opens it.** A right-click on a row is left to the browser's own menu, because nothing is built for a file yet — a dead right-click that suppresses the machine's menu and offers nothing in its place is worse than the menu. Container asks where the press landed (`closest('[data-asset-path]')`), per U44's gotcha.
+3. **The room a moved control leaves is not automatically free**, and this is the trap. The footer's fixed share is load-bearing (UG8: it must not resize when the selection changes, or the first click of a double-click moves the tile the second click is aimed at), so emptying it gains the browser nothing and *looks* broken. The answer is to shrink the reservation to what the remaining control needs and **spend what is left on a sentence naming the gesture that just moved** — the panel's own "where the modifiers are learned" note, which is the only place on screen a right-click could be taught.
+
+**A menu holding a form, not a list, is still a menu**: the same card, the same dismissal, the cursor in the field on open, and — deliberately — no memory of what was typed when it closes. A field that remembered an abandoned name would be a menu pretending to be a panel. _[earned 2026-08-15]_
+
 ## Gotchas
 
 ### UG15: A listener effect that reads `ref.current` arms against null when its element renders later — and every other code path heals it, so only the first gesture of a session is unguarded
@@ -595,12 +605,15 @@ Dockview tabs render a close affordance by default, and the shell has no panel m
 Contracts are referenced as file paths, never paraphrased as prose. Read the file; don't trust a summary of it.
 
 - `kernel-2d/editor/shell/panels.tsx` — every panel the editor has and the layout it opens in. Adding a panel happens here and nowhere else (U1), and the count of live renderers is bounded by what is in here (U18). A panel gains a real body by getting a `render`; without one it shows its own description, which is what keeps unbuilt panels honest instead of blank. All five have bodies now. Also the wrapper that puts all but the Viewport out of reach while a level runs (U26).
-- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, U22 (the control that puts a file in a human's project) and U29 (the one that renames, moves and deletes one). Also U34's frame: a bar, two halves either side of it, and the controls in a footer whose size cannot reach the browser (UG13).
+- `kernel-2d/editor/panels/AssetsPanel.tsx` — the folder mirror, the worked example of a panel with a body, U22 (the control that puts a file in a human's project) and U29 (the one that renames, moves and deletes one). Also U34's frame: a bar, two halves either side of it, and the controls in a footer whose size cannot reach the browser (UG13) — and U45, where making a file left that footer for a menu with two doors.
 - `kernel-2d/editor/shell/asset-browsing.tsx` — U34's state and U36's: which view, the trail of folders and where along it you are, how the split is divided, which folders are open, and the rename hook U30 requires of all of them.
 - `kernel-2d/editor/shell/useFolderHistoryButtons.ts` — the mouse's side buttons, UG14's three cancellations, and UG15's rule that the surface arrives as state rather than a ref.
 - `kernel-2d/editor/panels/SplitHandle.tsx` — U36's divider: a fraction rather than a width, a hairline inside a strip, and the double-click that puts it back.
 - `kernel-2d/editor/panels/AssetGrid.tsx` — the icon view. One folder at a time, the same rows the tree gets, and the note on why thumbnails are a feature rather than a detail of this one.
-- `kernel-2d/editor/panels/AssetBar.tsx` — the breadcrumb and the cog behind which the three views live, including why the breadcrumb is not on screen when the tree is.
+- `kernel-2d/editor/panels/AssetBar.tsx` — the breadcrumb, the `+` that makes a file (U45), and the cog behind which the three views live — including why the breadcrumb is not on screen when the tree is, and why an action and a setting do not share a menu.
+- `kernel-2d/editor/panels/NewDocument.tsx` — U22 and U45: the make-a-file card, rendered by whichever door opened it.
+- `kernel-2d/editor/shell/useMenuDismiss.ts` — what every menu in the editor does about Escape and a press elsewhere, lifted at the third caller.
+- `kernel-2d/editor/shell/floating.ts` — where a small floating card sits when it is opened at a spot in a panel. Shared by the entity window (U39) and the new-file menu (U45).
 - `kernel-2d/editor/shell/useFileMoves.ts` — the whole of a rename as a gesture: flush, plan, refuse, move, rewrite, report, and U30's remapping of what the human was looking at. The comment on why none of it goes through `edit` is the load-bearing one.
 - `kernel-2d/editor/shell/references.ts` — which documents point at a file, and the same documents with its new path written in. Only `path` moves; `id` never does.
 - `kernel-2d/editor/store/file-disk.ts` — the editor's two file operations, beside `document-disk.ts` and `meta-disk.ts`.
