@@ -472,6 +472,14 @@ The commonest offender is the poll that waits for Vite to hot-replace an edited 
 
 **Fix/policy:** before treating a full-suite failure as a regression, re-run that spec alone; if it passes, and especially if the failing set moves between runs, it is load. Do not "fix" it by widening a timeout that is already generous — and do not let it become the reason a suite result is skimmed, which is the real cost: a genuine failure in a noisy suite is a failure nobody trusts. When a run is green except for known-flaky specs, say so explicitly rather than reporting the suite as green. _[earned 2026-08-15, four full runs plus a stashed baseline]_
 
+### W27: `page.mouse.click` silently ignores `modifiers` — a modified click in a canvas has to hold the key by hand
+
+The first browser tests of Shift-click and Ctrl-click in the viewport all failed identically: the selection stayed at one. `page.mouse.click(x, y, { modifiers: ['Shift'] })` type-checks, runs, and dispatches an **unmodified** click — `modifiers` is an option on `locator.click`, not on `mouse.click`, and the extra key is dropped without a warning. Everything about the failure points at the feature: the outliner half of the same suite passed, the pick landed on the right entity, and the only wrong thing was that the press behaved like a plain one — which is exactly what a broken `shiftKey` read would look like.
+
+It bites specifically in canvas work, because a locator is not available: there is no element to click, only a coordinate, so `mouse` is the only door and it is the door without the option.
+
+**Fix/policy:** press the key around the click — `keyboard.down('Shift')`, `mouse.click(…)`, `keyboard.up('Shift')` — which is what `drag-place.spec.ts` already did for Alt mid-drag. Wrap it in one helper per spec rather than inline, so the mistake can only be made once. The general shape is worth carrying past Playwright: **a test API that accepts an option it does not implement fails as a product bug**, so when a modifier-driven feature fails and its unmodified path works, suspect the harness before the code. _[earned 2026-08-15, first multi-select in the picture]_
+
 ## Contracts
 
 - `kernel-2d/tests/fixtures/project-fixture.ts` — the temp-project builder, `waitFor`, and `delay`. Everything filesystem-shaped in the suite starts here.

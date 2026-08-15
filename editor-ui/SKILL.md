@@ -62,6 +62,21 @@ Two changes, each with its own reason.
 
 The rule that follows and is worth stating on its own: **nothing decides a file is a scene from its path.** Selecting a `.json` is what makes the editor *read* it; the `format` inside it is what makes it the open scene (U11). A `scenes/` folder is a convention in the folder map, not a fact the code may rely on. _[earned 2026-08-11]_
 
+**Amended again when selection went plural. The entity case holds a list; nothing else about U8 moved.**
+
+```ts
+| { kind: 'entity'; scene: string; entities: readonly string[] }  // never empty
+```
+
+The plural lives *inside* the union rather than beside it: a second "and also these" field would be a second answer to "what is selected", which is the pair problem the union was adopted to avoid. One scene rather than one per entity, for the same reason — a selection spanning two levels is not something the editor can act on, so it is not something the type can spell.
+
+Two invariants carry the whole change, and both are the same move as the union itself — *a state that cannot be written down is a state nobody has to check for*:
+
+1. **Never empty.** An empty entity-selection and `{ kind: 'none' }` would be two spellings of one state. Removing the last entity lands on `none`, enforced in the one function that can break it.
+2. **The last element is the primary one** — the most recently touched. Everything singular in the editor (the Inspector, `F`, `G`, Frame selected, the reorder arrows, Duplicate) reads a `selectedEntity` convenience that returns it. **This is what made the change cheap:** going plural touched the selection context, the two panels that build a selection, and the overlay that draws it — and no other panel grew a new thought, because none of them had to learn what a list means.
+
+The request that prompted it asked for selections to go on the Ctrl-Z stack. **They did not, and the reason is worth recording because it will be asked again:** U8's guarantee is the whole of why Ctrl-Z is predictable, and a stack holding both edits and selections makes every press a coin toss between reversing work and reversing a click. What the asker actually wanted was underneath it — deleting six entities should be *one* press, not six — and that is a property of the **edit** being one transaction, not of selection being undoable. When a request seems to want selection in the history, look for the multi-target edit it is really about. _[earned 2026-08-15]_
+
 ### U9: Anything with a live subscription is read once per window and shared, not per panel
 
 The Assets panel and the Inspector both need the project folder. The hook that fetches it and holds a change stream open is called once, in a provider above the layout, and both panels read from that. **Reason:** two callers means two streams, two fetches, and — the part that actually bites — two copies refreshed on separate timers, so one panel can be a beat behind its neighbour with nothing on screen saying so. Same reasoning as U5 one level up: the failure is not the wasted work, it is the two answers. **Providers go above the docking layout**, because dockview mounts and unmounts panel bodies as tabs move, and state held inside a panel is lost the first time the human drags it. _[earned 2026-08-11]_
@@ -404,6 +419,20 @@ The first sound in the editor, and three decisions that kept it small:
 3. **The playing state is a data attribute read back off the sound system** (`data-play-music`, `phaser4-runtime` P8/P4), refreshed by the ten-a-second description a running level already publishes — which is how a browser test asserts audio without hearing anything.
 
 **Worth noticing: this is the third asynchronous asset picker** (texture, startup level, now music), and the second that fetches an id from a `.meta` — the music picker is the texture picker with a different type filter. U28 declined to lift at two; at three, with two of them near-identical, lifting the shared shell is now justified the way `place-into-scene` was at its third caller (U35). Proposed rather than performed, one feature per session. _[earned 2026-08-14]_
+
+### U41: A modifier does not add a gesture — it adds an *answer* at the one place that already decides what a press means
+
+Shift-click and Ctrl-click arrived in two surfaces at once (the Outliner's rows, the picture), and the tempting shape in both is a branch at the call site: an `onClick` that reads `event.shiftKey` and calls a different function. In the picture that shape is actively wrong, and the reason is already written on the wall of `useSceneGestures.ts` — **one element cannot have two opinions about one `pointerdown`**. The modifier is not a new gesture competing with pick-and-drag; it is a third answer to the question that hook exists to answer once.
+
+So the press handler computes a `SelectMode` (`replace | add | remove`) and hands it to the same `select` it always called. Three things fell out of that, and each is a bug avoided rather than a nicety:
+
+1. **Only `replace` starts a drag.** A modified press that also armed a move would drag one entity out of a set the human was still assembling. The gate is one line, in the place that already decides whether a press drags at all.
+2. **A modified press on empty space does nothing** — it does not clear. A plain click on empty space still clears, so nothing is lost; but a six-click selection destroyed by a seventh that missed is what makes a multi-select feature the human stops using. **This is the acceptance criterion worth writing before the code**, because every positive test passes without it.
+3. **Shift wins over Ctrl when both are held.** Arbitrary, but one of them must: doing nothing reads as a press that missed.
+
+**The same three meanings must hold in both surfaces.** The list idiom for Shift is range-from-last-click, and it was declined: the picture has no order to take a range along, and a modifier meaning one thing in the list and another over the level is worse than the missing convenience. Where two surfaces share a modifier, the surface with fewer available meanings sets the vocabulary.
+
+**And the key that acts on the result goes in the same hook, not in a listener of its own.** `Delete` needed four guards — not while typing, not during a grab, not while a level runs, not without a scene — and `useSceneGestures` had already answered all four for `Shift-D`, on a **window** listener (which is why `Shift-D` has always worked with the hand in the Outliner). A second window listener would have re-derived all four and then raced this one. The smell is general: *before adding a global key handler, check whether an existing one already has the guards it needs* — the guards, not the topic, decide where it lives. _[earned 2026-08-15]_
 
 ## Gotchas
 
