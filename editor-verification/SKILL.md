@@ -458,6 +458,20 @@ Measured 2026-08-15 on Windows 11 in both headless Chromium and an embedded Chro
 
 **Fix/policy:** every URL a script hands a browser names `127.0.0.1` — the Playwright config already does, `Open editor.cmd` opens Vite's own resolved URL (which is the address), and the one place that said `localhost` was a hand-written launch config. When something in the editor is slow *only in a browser*, check the URL bar before the code. _[earned 2026-08-15, Chromium under Playwright and embedded]_
 
+### W25: `expect.poll` backs its interval off, so a state that is *briefly* true is walked straight over — watch a short-lived read-back from inside the page
+
+The first browser test of a synthesized sound waited ten seconds for `data-play-sound` to read `playing` and never saw it, while the sound was in fact playing twice in that window. Nothing was broken: the attribute is read back off the audio clock (`phaser4-runtime` P8's amendment), so it says `playing` for about a third of a second per cue, and Playwright's `expect.poll` escalates its interval (100 ms, 250, 500, 1000…) — after a couple of seconds it is sampling less often than the state exists. The failure reads exactly like a feature that never fired, which is the expensive part: two hours can go into the wrong half of the system before anybody asks how *long* the state was supposed to last.
+
+**Fix/policy:** `expect.poll` is for a state that arrives and *stays* (a file written, a level loaded, music looping). For anything that comes and goes, use `page.waitForFunction(…, { polling: 'raf' })`, which checks every animation frame and cannot miss a window longer than one. The general rule: **the watcher has to be faster than the state is short**, so before writing the wait, say out loud how many milliseconds the thing is true for. A read-back that is momentary by design — a sound, a flash, a one-frame flag — is a `waitForFunction`. _[earned 2026-08-15, first synthesized sound]_
+
+### W26: The browser suite has load-dependent flakes, so a full-run failure is not evidence of a regression until it fails on its own
+
+Measured 2026-08-15 across four full runs of the 268-test browser suite on one Windows machine: every run failed one to three tests, **a different set each time** — frame guides, an Inspector row, a split-view drag, a scene reload, and (twice) play mode's hot-replacement poll. Every one of them passed when its spec was run alone. The decisive measurement is the fourth run: with the session's whole change stashed out, the suite still failed two tests, one of them the same hot-replacement poll. The flakiness is the suite's own parallel workers competing for a machine, not anything the change did.
+
+The commonest offender is the poll that waits for Vite to hot-replace an edited system (`play.spec.ts`, "runs the project's own system, and stops when the project stops asking for it"): it caps at 20 s, and under full-suite load the dev server sometimes needs longer, so the test reports the *old* behaviour rather than a timeout — "expected 1, received 2", which reads exactly like the feature being broken.
+
+**Fix/policy:** before treating a full-suite failure as a regression, re-run that spec alone; if it passes, and especially if the failing set moves between runs, it is load. Do not "fix" it by widening a timeout that is already generous — and do not let it become the reason a suite result is skimmed, which is the real cost: a genuine failure in a noisy suite is a failure nobody trusts. When a run is green except for known-flaky specs, say so explicitly rather than reporting the suite as green. _[earned 2026-08-15, four full runs plus a stashed baseline]_
+
 ## Contracts
 
 - `kernel-2d/tests/fixtures/project-fixture.ts` — the temp-project builder, `waitFor`, and `delay`. Everything filesystem-shaped in the suite starts here.

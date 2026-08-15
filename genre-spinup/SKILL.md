@@ -214,6 +214,8 @@ The constraint that made "exactly" load-bearing: **framing and the export's fit 
 
 The tally: the panel instinct is 0-for-7, and the renderer-feature instinct is now 0-for-1 by the same question. The instinct that *was* right twice the same day is the seam instinct — the difference is that input and camera genuinely cannot be expressed as content, which is the test to apply. _[earned 2026-08-15, second spin-up's systems phase]_
 
+**The same game's sound phase asked it a fourth time and the answer was a seam again** (`editor-kernel` D33): a speaker is as much the host's as a canvas is, and no arrangement of entities makes a noise. What the question *did* decide was the shape — the ask carries **notes rather than a sound's name**, because a kernel that knew what a jump sounds like would learn a vocabulary per genre, which is the same failure the panel instinct keeps proposing in a different costume. Ask the second question too, once the seam is granted: *what is the smallest thing crossing it that is not about this game?* _[earned 2026-08-15, second spin-up's sound phase]_
+
 **S5 held on second application, unamended:** the platformer's runner is the tower defense's three files with the names changed, its fixtures are entity lists, and nothing new had to be decided. One game-side gotcha came out of the fixture shape and lives in the game's own skill (`games/platformer-2d/.claude/skills/game-code`): a game whose level bounds derive from its own solids makes a small test platform's edges into walls.
 
 ## Gotchas
