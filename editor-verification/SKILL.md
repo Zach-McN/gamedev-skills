@@ -452,6 +452,12 @@ The Texture tab sits behind the Viewport in the same group. Every assertion abou
 
 **Fix/policy:** a shared `showPanel(page, title)` helper that clicks the tab and waits for `aria-selected`, called in `beforeEach` for any spec whose subject shares a group. Do not reach for `{ force: true }` or for asserting against hidden elements — the panel really is not there, and a test that pretends otherwise is asserting against something the human cannot see. _[earned 2026-08-11, dockview 8.0.0]_
 
+### W24: A browser driven at `http://localhost:…` pays ~300 ms per request against a server bound to 127.0.0.1 — drive it at the address, never the name
+
+Measured 2026-08-15 on Windows 11 in both headless Chromium and an embedded Chromium pane: every request to the editor at `localhost:5173` took a flat ~305 ms (`/vite.svg` included, six in parallel serialising to 6×305), while `curl` through the same proxy took 2 ms and the page at `127.0.0.1:5173` took 4 ms. The dev server binds `127.0.0.1` on purpose (`scripts/editor-server.ts` says why); Chromium resolves `localhost` to `::1` first, finds nothing, and falls back to IPv4 after its Happy-Eyeballs delay — *on every new connection*, and a level's reload is sixty-odd fetches. The symptom is not an error: it is a door back to a scene that "does nothing" for five seconds, and a probe that concludes the load never settled.
+
+**Fix/policy:** every URL a script hands a browser names `127.0.0.1` — the Playwright config already does, `Open editor.cmd` opens Vite's own resolved URL (which is the address), and the one place that said `localhost` was a hand-written launch config. When something in the editor is slow *only in a browser*, check the URL bar before the code. _[earned 2026-08-15, Chromium under Playwright and embedded]_
+
 ## Contracts
 
 - `kernel-2d/tests/fixtures/project-fixture.ts` — the temp-project builder, `waitFor`, and `delay`. Everything filesystem-shaped in the suite starts here.
