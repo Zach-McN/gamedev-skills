@@ -69,6 +69,21 @@ Four specifics, each measured against 4.1.0 rather than assumed:
 
 **And still no new `Phaser.Game`.** P2's amendment said a new game is warranted by a new surface and never by a new mode; a clock is not even a mode. The editor's Play and an exported page run the same `runLevel` over the same renderer. _[earned 2026-08-13, Phaser 4.1.0]_
 
+### P8: Sound is the scene view's, fed bytes by hand, and its state is read back off the manager
+
+A level's music plays through the sound manager of the *existing* scene-view game — no new `Phaser.Game` (P2 again), and no Phaser `Loader`: the bytes arrive through the same `resolveAssetUrl` seam a texture's do, fetched by the view and handed to `WebAudioSoundManager.decodeAudio(key, arrayBuffer)`, keyed `path@version` exactly like a texture so a re-saved file is re-fetched and an unchanged one never is. After decode, `sound.add(key, { loop: true }).play()`.
+
+Six specifics, each checked against the vendored 4.1.0 types rather than assumed:
+
+1. **The editor's game config had `audio: { noAudio: true }`, and lifting it is per-surface.** The scene view — the surface levels run in — gets audio; the single-texture preview keeps `noAudio`, so the window still owns exactly one `AudioContext`. When a renderer stays silent, check the config before debugging the sound code: a `NoAudioSoundManager` swallows every call without a word.
+2. **`decodeAudio` exists only on `WebAudioSoundManager`** — the HTML5 fallback cannot be fed bytes. Guard with `instanceof` and answer `failed` in the state rather than throwing; every desktop browser takes the Web Audio path.
+3. **The only failure signal a decode gives is `DECODED_ALL` firing with nothing in `game.cache.audio` under your key.** `DECODED` fires per key on success; there is no per-key error event — the docs' phrase is "decoded (or errored)". Listen for both, registered *before* `decodeAudio` is called: the decode can settle in the same tick, and an event nobody was listening for yet is an event that never happened.
+4. **`manager.locked` is the browser's autoplay policy**, true until the player's first gesture. Park the `play()` on `Phaser.Sound.Events.UNLOCKED` rather than dropping it, and say `locked` in the state — an exported game's music then starts on the first click with no retry written anywhere. Behind the editor's Play button the click that started the run is already the gesture.
+5. **Async continuations carry a ticket.** A fetch and a decode both land later, and the run may have stopped — or asked for a different track — in between; a continuation that is not the current ask does nothing. Same shape as the view's own `sequence`.
+6. **What the sound is doing is read back off the manager and the sound object (P4)**, surfaced as one state (`silent | loading | locked | playing | failed`) on a DOM attribute — `data-play-music` in the editor, `data-game-music` on an exported page — which is how an audio feature is asserted in a browser test without hearing anything.
+
+**And a silent MP3 can be assembled by hand for fixtures.** MPEG-1 Layer III frames whose side information is all zeros decode as silence in Chromium; `kernel-2d/scripts/sample/mp3.ts` builds one deterministically (header `FF FB 90 C0`, 417-byte frames at 128 kbps / 44.1 kHz mono, 17 zero side-info bytes), which is what lets the sample project carry a real `.mp3` with no encoder installed and no third-party audio — proven end to end by the browser test that watches that file reach `playing`. _[earned 2026-08-14, Phaser 4.1.0]_
+
 ## Gotchas
 
 ### G9: `update` **is** declared on `Phaser.Scene`, so it must carry `override` — the exact opposite of `create`
@@ -142,11 +157,12 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/runtime/preview/texture-view.ts` — P2 and G5 as built: booting one game against a supplied canvas, the image cache, and the report of what was actually drawn.
 - `kernel-2d/runtime/textures/import-settings.ts` — P3 and P4: settings applied to a live texture, and the filter read back off it.
 - `kernel-2d/runtime/textures/frames.ts` — the frame geometry of G2. The single definition of what a slice means, shared by the renderer and by anything drawing over it.
-- `kernel-2d/runtime/scene/scene-view.ts` — the second surface of P2 as amended: one game, told which scene and which textures, reporting what it drew.
+- `kernel-2d/runtime/scene/scene-view.ts` — the second surface of P2 as amended: one game, told which scene and which textures, reporting what it drew. Also P8: the level's music, started by a run and read back as a state.
 - `kernel-2d/runtime/scene/entity-layer.ts` — display objects kept in step with a list of entities by id, updated in place rather than rebuilt, and the `getBounds()` report of G8.
 - `kernel-2d/runtime/scene/coordinates.ts` — the y-up-to-y-down flip, the rotation sign, the camera, and the pixel-grid snap of P5 — with no Phaser import, so every one of them is testable without a browser.
-- `kernel-2d/runtime/scene/load-scene.ts` — what feeds the renderer when the editor is not there to. Imports Phaser nowhere and takes its two types from `scene-request.ts`, so it runs and is tested in plain Node — and, since the export command, is *called* from plain Node.
-- `kernel-2d/runtime/web/start-game.ts` — P6: the whole of what a shipped game does. One renderer, a `fetch` reader, a fit on the shared ladder, the same `runLevel` the editor's Play uses, and the report it leaves on the page.
+- `kernel-2d/runtime/scene/load-scene.ts` — what feeds the renderer when the editor is not there to, the level's music included: resolved by path, witnessed by the `.meta`'s id, silent-and-named when it cannot be. Imports Phaser nowhere and takes its two types from `scene-request.ts`, so it runs and is tested in plain Node — and, since the export command, is *called* from plain Node.
+- `kernel-2d/runtime/web/start-game.ts` — P6: the whole of what a shipped game does. One renderer, a `fetch` reader, a fit on the shared ladder, the same `runLevel` the editor's Play uses, the music each run starts (P8), and the report it leaves on the page.
+- `kernel-2d/scripts/sample/mp3.ts` — P8's fixture: a valid, silent, deterministic MP3 with no encoder installed, and the frame arithmetic written down.
 - `kernel-2d/runtime/game/loop.ts` — P7's fixed step: the accumulator, the ceiling, and the reasons, with no Phaser in it so a test can drive it by hand.
 - `kernel-2d/runtime/game/system.ts` — what a system is, which is the smallest interface in the kernel and is meant to stay that way.
 - `kernel-2d/runtime/game/run-level.ts` — the transient copy of a level and the glue around it (`editor-kernel` D27). Takes its frame source and its draw as plain functions, so it runs in Node.

@@ -395,6 +395,16 @@ A right-click on an entity opens a small window beside it holding the entity's p
 
 The browser's own context menu is prevented on the surface unconditionally — not gated on the editor being enabled, because while a level runs the right button is the game's, and the browser menu over a running game is the same wrong answer. _[earned 2026-08-14]_
 
+### U40: A level's music is the scene's own field, chosen in the scene's inspector body, and only a run ever plays it
+
+The first sound in the editor, and three decisions that kept it small:
+
+1. **The field is on the scene document, not on an entity.** Which sound a level plays is a fact about the level — one level, one track — and an entity carrying it would make "which entity holds the music" a question with fifty wrong answers. The scene's inspector body (the U28 fall-through that had nothing editable) gained its first control: a picker offering every audio file in the project, writing a D5 reference through the transaction API, "Nothing" deleting the field rather than emptying it. Editable only while the scene is the open one, because a control must edit the store (U12) and opening is what puts it there.
+2. **Starting and stopping the music belongs to the run, in the same effect that starts and stops the level** (`running-level.ts` behind Play, `start-game.ts` in a shipped folder). Editing is silent because nothing else ever asks — a property of who calls, not a mute flag anywhere. Travelling through a door switches to the new level's track, or to silence when it has none, because each `begin` states its own music.
+3. **The playing state is a data attribute read back off the sound system** (`data-play-music`, `phaser4-runtime` P8/P4), refreshed by the ten-a-second description a running level already publishes — which is how a browser test asserts audio without hearing anything.
+
+**Worth noticing: this is the third asynchronous asset picker** (texture, startup level, now music), and the second that fetches an id from a `.meta` — the music picker is the texture picker with a different type filter. U28 declined to lift at two; at three, with two of them near-identical, lifting the shared shell is now justified the way `place-into-scene` was at its third caller (U35). Proposed rather than performed, one feature per session. _[earned 2026-08-14]_
+
 ## Gotchas
 
 ### UG15: A listener effect that reads `ref.current` arms against null when its element renders later — and every other code path heals it, so only the first gesture of a session is unguarded
@@ -558,6 +568,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/placing.tsx` — U31's state: what a press lands on and what it puts down, above the layout, in neither the document nor any file.
 - `kernel-2d/editor/panels/PlaceByClicking.tsx` — the switch, shared the moment the second inspector wanted it, and the note on why turning it on places nothing.
 - `kernel-2d/editor/panels/TexturePicker.tsx` — one picker, two owners, and the D5 round trip that fetches a texture's id. Lifted out the moment a prefab needed the same control as an entity.
+- `kernel-2d/editor/panels/SceneMusicPicker.tsx` — U40: which sound a level plays, written as a D5 reference on the scene itself, and the note on why nothing plays while editing.
 - `kernel-2d/editor/shell/project-context.tsx` — U9. One folder read and one change stream per window.
 - `kernel-2d/editor/shell/useAssetMeta.ts` — one file's import settings, re-asked when the folder changes as well as when the selection does.
 - `kernel-2d/editor/shell/useProjectTree.ts` — the folder, kept current: the re-read of U5, the settle of U6, and the stale state of U7.
