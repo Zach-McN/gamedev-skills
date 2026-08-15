@@ -206,6 +206,16 @@ one honest translation left — the reference's y-down grid to the kernel's y-up
 was verified by looking at the drawn level, which is the only check that question has.
 _[earned 2026-08-14, second spin-up]_
 
+### S9: The first "renderer feature" a genre asked for was content too — a backdrop is a placed entity, not a kernel seam
+
+The platformer's systems phase arrived with three named kernel gaps: held-key input, camera control, and the sky backdrop. Two were real seams and grew in as the input/camera decisions record (`editor-kernel` D29's extension and D31 — both shaped by this game, honest S1 consumers). **The third dissolved on the same question the tower defense asked seven times: ask what the thing *is* before asking what would render it.** The reference paints a screen-space sky gradient; but its viewport always shows the level's full height, so a gradient fixed to the screen and a gradient spanning the level are the same pixels. A sky is therefore a 16×304 gradient PNG, a prefab, and **the level's first entity** (scene list order is draw order, so first is rearmost) — scaled to span the level exactly, generated and marked like any other content, visible while *editing* too, which no renderer feature would have given.
+
+The constraint that made "exactly" load-bearing: **framing and the export's fit read the drawn extent, so an oversized backdrop would inflate what "frame the level" means.** A backdrop the size of the level leaves every fit and clamp (D31's) meaning what it meant. Size a backdrop to the level, never "level plus margin for safety".
+
+The tally: the panel instinct is 0-for-7, and the renderer-feature instinct is now 0-for-1 by the same question. The instinct that *was* right twice the same day is the seam instinct — the difference is that input and camera genuinely cannot be expressed as content, which is the test to apply. _[earned 2026-08-15, second spin-up's systems phase]_
+
+**S5 held on second application, unamended:** the platformer's runner is the tower defense's three files with the names changed, its fixtures are entity lists, and nothing new had to be decided. One game-side gotcha came out of the fixture shape and lives in the game's own skill (`games/platformer-2d/.claude/skills/game-code`): a game whose level bounds derive from its own solids makes a small test platform's edges into walls.
+
 ## Gotchas
 
 ### SG1: A game folder is a git repo, so the Assets panel shows the human tooling files

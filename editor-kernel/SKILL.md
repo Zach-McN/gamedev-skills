@@ -119,6 +119,12 @@ Ask it of anything the runtime is given permission to mutate: **is the thing bei
 
 **Presses only, and that is S1 rather than an oversight.** The first consumer (tower-defense's Call Wave) needs a press; held-key state would be a guess about the second game. The collector skips key repeats, ignores anything typed into an editable element (play mode shares a window with panels), and claims Space's default — which would otherwise scroll the page or re-press the still-focused Stop button; the editor blurs the focused element at Play for the same trap. _[earned 2026-08-14, first input]_
 
+**The second game arrived and held keys grew in, shaped by it — and the load-bearing distinction is that presses are events while held keys are state.** The platformer's walk, sprint and variable jump are all holds, and its jump cut is a release. `InputSample` gained an optional `held` (the codes down right now); the collector pairs every keydown with its keyup and **clears the set on window blur**, because the keyup for a key held across an alt-tab never arrives and the ninja would sprint forever on nothing. Two consequences that took deciding:
+
+- **A catch-up frame blanks the presses for its later steps and keeps the held set** (`run-level.ts`): a press belongs to exactly one step, but a player holding right through a hitch did not let go three times. One discipline per kind, in the same sample.
+- **Releases need no third field.** A system detects them by comparing `held` across its own steps — the platformer's jump cut and its no-autofire jump both fall out of that one edge, so the seam stays two kinds of data rather than three.
+- **The arrows joined Space in the claimed set, and the claim moved ahead of the repeat check.** An arrow's default scrolls the page on *every autorepeat*, so a claim that skips repeats stops the first scroll and allows the rest. Claimed only outside editable elements, so typing keeps its keys. _[extended 2026-08-15, second game — held keys]_
+
 **The pointer joined the same day, demanded by build-during-play, and the load-bearing choice is the unit: clicks arrive in scene coordinates.** A system knows nothing of cameras or pixels, so the host that has the camera converts before handing over — both hosts against the renderer's own report (`toScenePoint` on `drawnWith`/`canvasSize`), the editor using the running level's latest frame with the started frame as the pre-first-draw fallback. The `input` source became one sample per drain — `{ pressed, clicked }` — same one-step discipline for both. In the editor the click listener rides the run's own effect: the editing gestures are off while a level runs, so a click on the picture can only mean the player, and Stop hands the mouse back by tearing the listener down with the run. Left button only; a report to convert against is the precondition, not an assumption. _[extended 2026-08-14, first pointer]_
 
 ### D30: The game reaches back out through two more entities — the door (open another scene) and the story (remember between runs) — and travelling never touches the open document
@@ -131,6 +137,19 @@ Ask it of anything the runtime is given permission to mutate: **is the thing bei
 - **The export walks the doors** — see D13's closure amendment and `text-formats` T20 for the `scene`-key convention that makes a game's travel *visible to tooling* without the kernel learning any game's vocabulary.
 
 _[earned 2026-08-14, first door and first story]_
+
+### D31: The game aims the camera through a third ask entity, the focus is the whole ask, and the host clamps it to what there is to see
+
+`runtime/game/camera.ts`, crossing the seam the way the door does (D30): `aimCamera(entities, focus)` keeps one `run#camera` entity re-aimed, the runner reads it each moved frame and tells the host **before that frame's draw**, so the picture and the viewpoint arrive together — told afterwards, the view trails the game by a frame, which reads as the level jittering against its own background. Demanded by the platformer's camera follow, the first level wider than its window.
+
+Four decisions, each with a tempting wrong answer:
+
+1. **The ask is a focus and only a focus — the scale stays the host's.** The editor draws at the human's zoom, an exported page at the fit it framed, and a game that dictated pixels-per-unit would be a game that knows how big a canvas is, which is exactly what a system may not know. The ease, the target, the feel of the chase: all game code, holding its own state; the seam carries one point.
+2. **The host clamps the ask, with shared arithmetic.** A camera aimed past the edge of the level is aimed at the edge — `clampFocus` in `runtime/scene/coordinates.ts`, used by both hosts so they clamp identically, centring on any axis the content cannot fill (the only answer that does not jitter between two edges). **Clamp against the *started* frame's content bounds, not the latest**: a moving level's bounds follow whatever jumped highest this frame, and a clamp that breathes reads as jitter.
+3. **The renderer's `redraw` gained an optional camera, and that is the host's whole mechanism.** One call moves the entities and the view in one sync — a `restage` (stale entities) followed by a `redraw` (second sync) draws the level twice per frame to be right once. The editor's play hook passes the clamped ask through it; **Stop restages the human's editing camera back**, because the run moved the renderer's camera and never the editor's state, so putting it back is one call and the camera the human was editing through survives the whole excursion untouched.
+4. **A run whose host takes no camera leaves the ask standing**, which is how the platformer's own suite asserts "the camera chases the ninja" with no host, no canvas and no renderer near it — same shape as the door's no-handler case, and the reason the runner hides the carrier from every draw.
+
+_[earned 2026-08-15, first camera follow]_
 
 ### D13: Export targets are kernel-level, one command each
 
@@ -622,6 +641,8 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/runtime/game/system.ts` — the whole of what a system is. Deliberately the smallest interface in the kernel; the pressure to grow it should be resisted until a game applies it.
 - `kernel-2d/runtime/game/systems/index.ts` — `BUILT_IN_SYSTEMS`, the menu-not-policy of D28 point 2: a project that wants one imports it by name, and nothing falls back to it.
 - `kernel-2d/editor/shell/running-level.ts` — the editor's entire part in a running level, and the ordering that makes the play comparison mean something.
+- `kernel-2d/runtime/game/input.ts` and `kernel-2d/runtime/web/keyboard.ts` — D29 as built: the carrier, the press/held distinction, and the DOM collector both hosts wire.
+- `kernel-2d/runtime/game/camera.ts` — D31: the game aiming the view, and `clampFocus` in `runtime/scene/coordinates.ts` as the host's shared half.
 - `kernel-2d/runtime/formats/scene-schema.ts` — `SceneSchema`: the flat entity list, the transform, the open component map, and the registry of components the kernel knows. Owned by `text-formats`.
 - `kernel-2d/runtime/formats/prefab-schema.ts` — `PrefabSchema` and the resolution of D25. Imports the scene's registry and is never imported back, which is the whole of why these are two files (T14).
 - `kernel-2d/editor/shell/scene-prefabs.tsx` — D25 as built: which prefabs a level points at, read into the store, merged by the format's own function, and the three things that can be wrong with a reference. Owned by `editor-ui`.
@@ -659,7 +680,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Parenting. The entity list is flat and ordered, which is the shape a `parent` field can be added to without a migration; nothing can set one yet, so nothing carries one.
 - Repairing a reference to a file that moved **outside** the editor. The fixup exists for a move the editor performed, where both paths are known before either watcher event arrives (D5, G7). Outside it there is still nothing to correlate a disappearance with an appearance, and the settings are gone at the next start.
 - A desktop export. D13's other half. The web export exists and is a static folder, so a native shell is a wrapper over it rather than a second build of the game.
-- Input. Things move now — D27's loop and D28's systems are real — but nothing in the runtime reads a keyboard or a pointer while a level runs. A game with controls is the session that decides where input state lives. *(This entry said "anything that moves" until 2026-08-14; the loop and systems had existed for a day by then. A parked-features list ages faster than any count — verify it against the Contracts list above before trusting either.)*
+- ~~Input.~~ **Discharged across 2026-08-14/15** — presses and clicks (D29), then held keys with the second game (D29's extension). The aging note the entry carried proved itself twice: it sat here a day after D29 landed, again. Struck rather than deleted so the lesson keeps its referent.
 - More than one level in a game. `project.json` names a startup scene and nothing can reach a second one, so the export's transitive closure is complete by accident rather than by design. The day a level can name another, the closure walk in `plan.ts` is the thing that follows it.
 - Anything about making an export small: no minification (deliberately off, so D1's marker check stays trustworthy), no packing, no atlases. `game.js` is a few megabytes.
 - Creating `project.json` from inside the editor. It is edited when it is there, the sample generator writes one, and the export refuses by name when it is not — but nothing in the editor will make one.
