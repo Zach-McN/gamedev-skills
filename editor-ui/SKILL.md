@@ -339,6 +339,14 @@ Five things that only appear once it is built:
 
 Two smaller things worth carrying: the angle is **measured from the start bearing, never accumulated** (the drag's own rule, and what makes a full circle exactly the identity — the cheapest test for someone changing it later); and the gesture publishes the pivot and the pointer **in the space the overlay draws in**, so the gizmo cannot disagree with what is being rotated about, and so a browser test can ask the editor where the pivot is instead of guessing it from one sprite's outline. _[extended 2026-08-15]_
 
+**The third — `S` to scale — was transcription plus three points, and the first of them is the one worth having.** Points 1–8 were reused unchanged; that it took an afternoon is the evidence that the shape is a shape.
+
+9. **The axis lock does not mean the same thing in every gesture, and nobody notices until the third one.** A grab's `X` is the *level's* axis — travel along world x. A scale's `X` is the **sprite's own**, and it costs nothing to be local: a transform scales before it rotates, so multiplying `scaleX` stretches the sprite along its own side however it is turned, with no rotation read anywhere. The same key, in the same hand position, is world-space in one gesture and local-space in the next — correct rather than sloppy, because it is what each gesture's number *is*. What has no local answer is the **group** half: several entities have several locals, so positions spread on world axes while shapes stretch on their own. For one entity the two coincide exactly (its offset from its own pivot is zero), which is why this ships without a world/local toggle and nobody meets the gap.
+10. **Express the lock as a factor pair, not a branch.** `{x: f, y: f}` unlocked, `{x: f, y: 1}` for X. As a branch, "which axis" leaks into the arithmetic, the transaction, the gizmo and the caption; as a pair, exactly one place — where the key is read — knows an axis exists. Rotate never had to learn this, because a flat level has one axis to turn about.
+11. **Every group transform has two halves, and the obvious half passes half the tests.** Rotate is orbit-and-spin; scale is spread-and-grow; a move is the degenerate case with one half. An implementation that only grows the sprites passes every assertion about sizes. Write the pair assertion first — it is the same test one gesture over, and it is the one that fails for the bug that actually happens.
+
+Two smaller ones. A scale's number is a **ratio of two on-screen distances**, which makes the dead radius load-bearing for a second reason — dividing by a reach of nothing, not only noisy bearings — and makes blocking the wheel mid-gesture non-negotiable, since the wheel changes the denominator with the hand perfectly still. And **a gizmo has to make its own number legible in its own way**: a swept angle gets an arc, but a ratio has nothing to sweep, so the readable thing is the *starting reach marked on the line* — which side of that mark the cursor is on is the whole of "bigger or smaller", and it is what makes a snapped factor read as steps rather than as a laggy mouse. _[extended 2026-08-15]_
+
 ### U34: A second way of looking at the same folder is two components either side of one bar, and where you are browsing is window state
 
 The Assets panel gained the file-explorer view: a grid of tiles showing one folder at a time, a breadcrumb, and a cog offering tree / icons / both-at-once. Four things came out of it, and the first is the one that shapes the rest.
@@ -494,6 +502,12 @@ The Assets panel carried a permanent make-a-file row under the folder listing: a
 
 ## Gotchas
 
+### UG16: "Scale" is already taken in a 2D editor — the camera's zoom is a scale, and so is an entity's size
+
+Adding the `S` gesture wanted `data-testid="scene-scale"` for its gizmo. That id already existed, on the zoom readout in the viewport's caption: the camera's scale. Two nodes, one test id, and Playwright's strict mode failed with "resolved to 2 elements" in the two tests that looked for the gizmo — a legible failure, but only because a *locator* hit it. The same collision in a data attribute read by `getAttribute` would have returned the wrong number silently.
+
+The editor now has three unrelated meanings of the word within one panel: `data-scene-scale` (the camera's), `data-scene-scale-x/-y` (the gesture's factor), and each entity's own `scaleX`. **Fix/policy: name a gesture's marks after the *gesture*, not after the quantity** — `scene-scaling`, `data-scene-scaling` — which is unambiguous precisely because it names something that is happening rather than a number that three things have. Worth checking on sight whenever a new gesture shares a word with the camera: "scale", "position", "origin" and "bounds" all already mean something in a viewport. _[earned 2026-08-15]_
+
 ### UG15: A listener effect that reads `ref.current` arms against null when its element renders later — and every other code path heals it, so only the first gesture of a session is unguarded
 
 The side-button guard (UG14) was attached in an effect whose first line was `const element = surface.current; if (element === null) return`. The Assets panel shows "Reading the project folder…" before the browsing area exists, so on the effect's first run the ref was null and the guard armed against nothing. The effect's deps — the view, the trail's callbacks — all change on ordinary use, and any of them re-runs the effect and arms it for real.
@@ -612,6 +626,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/AssetGrid.tsx` — the icon view. One folder at a time, the same rows the tree gets, and the note on why thumbnails are a feature rather than a detail of this one.
 - `kernel-2d/editor/panels/AssetBar.tsx` — the breadcrumb, the `+` that makes a file (U45), and the cog behind which the three views live — including why the breadcrumb is not on screen when the tree is, and why an action and a setting do not share a menu.
 - `kernel-2d/editor/panels/NewDocument.tsx` — U22 and U45: the make-a-file card, rendered by whichever door opened it.
+- `kernel-2d/editor/shell/scale.ts` — U33's third gesture: the factor pair, the ratio, and what "local" means for a group.
 - `kernel-2d/editor/shell/useMenuDismiss.ts` — what every menu in the editor does about Escape and a press elsewhere, lifted at the third caller.
 - `kernel-2d/editor/shell/floating.ts` — where a small floating card sits when it is opened at a spot in a panel. Shared by the entity window (U39) and the new-file menu (U45).
 - `kernel-2d/editor/shell/useFileMoves.ts` — the whole of a rename as a gesture: flush, plan, refuse, move, rewrite, report, and U30's remapping of what the human was looking at. The comment on why none of it goes through `edit` is the load-bearing one.
@@ -635,7 +650,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
 - `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
 - `kernel-2d/editor/shell/scene-view-context.tsx` — U18 and U19: the scene renderer, why two is a bounded number rather than a habit, one camera per scene for the life of the window, and the three conditions a scene satisfies before it is framed. Also `useDrawScene`: the request key that distinguishes two derivations of one level, and the answer to U27.
-- `kernel-2d/editor/shell/useSceneGestures.ts` — U20, U21, U31, U33 and U39: left-press to pick, place or stamp, right-click to ask (or to leave a mode), middle-drag, space-drag, wheel-to-zoom, the framing keys, `G` and its axis keys, `Shift-D`, Esc, the order they take priority in, and the unconditional suppression of the browser's context menu.
+- `kernel-2d/editor/shell/useSceneGestures.ts` — U20, U21, U31, U33 and U39: left-press to pick, place or stamp, right-click to ask (or to leave a mode), middle-drag, space-drag, wheel-to-zoom, the framing keys, `G`, `R` and `S` with their axis keys, `Shift-D`, Esc, the order they take priority in, and the unconditional suppression of the browser's context menu.
 - `kernel-2d/editor/shell/useDuplicateEntity.ts` — U33's fifth point: one answer to what a copy is, called by the Outliner's button and by the viewport's key.
 - `kernel-2d/editor/shell/drawn-entities.ts` — every question asked about the picture the renderer drew: what an entity covers, what is on the canvas, and what is under the pointer. One set of rectangles, so a click cannot disagree with an outline.
 - `kernel-2d/editor/shell/open-scene.tsx` — which scene is open and the document behind it; one fetch that both decides a `.json` is a scene and puts it in the store.
@@ -655,7 +670,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/useAssetDrag.ts` — U35's source half: what a file being carried out of the Assets panel puts on the drag, and why the path is not on it.
 - `kernel-2d/editor/shell/useSceneDropTarget.ts` — U35's target half: the three events, the enter/leave count, and the inversion through the camera the renderer drew with.
 - `kernel-2d/editor/shell/useDropIntoScene.ts` — what a dropped file turns out to be, read rather than guessed, and the sentence for each thing it cannot be.
-- `kernel-2d/editor/shell/snap.ts` — U31's arithmetic, and the paragraph on why a grid needs an offset as well as a step. No React in it, so the properties are unit-testable.
+- `kernel-2d/editor/shell/snap.ts` — U31's arithmetic, the paragraph on why a grid needs an offset as well as a step, and the three intervals one switch governs (grid, angle, factor). No React in it, so the properties are unit-testable.
 - `kernel-2d/editor/shell/placing.tsx` — U31's state: what a press lands on and what it puts down, above the layout, in neither the document nor any file.
 - `kernel-2d/editor/panels/PlaceByClicking.tsx` — the switch, shared the moment the second inspector wanted it, and the note on why turning it on places nothing.
 - `kernel-2d/editor/panels/TexturePicker.tsx` — one picker, two owners, and the D5 round trip that fetches a texture's id. Lifted out the moment a prefab needed the same control as an entity.
@@ -675,7 +690,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 **Not yet written** — until a path appears here, the contract does not exist and must not be assumed:
 
 - Inspector auto-generation from Zod schemas. Every inspector body is hand-written, and there are enough of them now that generalising has something to generalise *from*.
-- Gizmos for rotate and scale, a marquee, dragging a pivot or a frame grid, and cycling through overlapping sprites with repeated clicks. Position is the one thing a viewport can change; everything else is the Inspector's, deliberately.
+- **Draggable** handles of any kind — corner boxes for size, a ring for angle, a pivot that can be moved, a frame grid. Position, angle and size are all reachable in the picture, but only as modal key gestures (U33's `G`, `R`, `S`), and every one of them works about the selection's own middle. Also not written: a marquee, and cycling through overlapping sprites with repeated clicks.
 - A grid or rulers *drawn*. The snap is settable (U31) and nothing renders it, so a board lines up to lines nobody can see. The overlay that would draw them is U16-shaped work and has not been asked for.
 - Painting by dragging: a stroke that stamps one copy per cell crossed. Clicking is quick enough, and a stroke is the first step toward a brush, a rectangle tool and an eraser — none of which the kernel has been asked for and all of which are what `genre-spinup` S1 sends at a game folder.
 - Nesting in the Outliner. The list is flat; a row drags to *reorder* (U37), never to become a child of another.
