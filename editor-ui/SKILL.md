@@ -470,6 +470,18 @@ Play was greyed while an entity was being moved, but only incidentally: the cond
 
 Two tells that this is the bug you have: the control is correct on the frame the gesture starts (so any assertion made straight afterwards passes), and the complaint is about *flicker* rather than about the state being wrong. **The test therefore has to wait** — start the gesture, hold still well past the point the renderer has certainly caught up, and assert the control is still disabled. A version without the wait passes against the bug it was written for, which is worth checking by reverting the fix and watching the test fail. _[earned 2026-08-15]_
 
+### U44: A floating window two panels can open is *one* window in shell state with an owner — not one component mounted twice
+
+The right-click window (U39) had a second door added: a right-click on an entity's row in the Outliner opens the same window on the same entity. The obvious shape — the Outliner grows its own `useState` anchor and renders its own `EntityPopover` — is wrong for a reason that only shows up in one press out of twenty: right-click a sprite, then right-click that *same* entity's row, and both windows are open at once, about one entity, because neither panel's ways-out list (U39.3) contains "the other panel opened it". Every cheap patch for that is a panel reaching into a panel.
+
+**So the anchor is a provider above the docking layout, holding at most one window: `{ owner, scene, entity, at }`.** A panel draws it only when `owner` is its own, and opening from either door overwrites the one slot — which closes the other panel's window without either panel knowing the other exists. `at` is in the owning panel's own pixels and meaningless in any other, which is exactly why `owner` has to be in the state rather than inferred.
+
+**What is shared and what is not, is decided by who can answer the question.** The *placing* rule is shared (one `popoverSpot(panelBox, at)` — next to the click, clamped inside the panel, so the window cannot behave like two different windows depending on the door). The *ways-out* stay with each panel, because they are not the same list: the viewport's anchor is taken away by the camera moving, the Outliner's by the list scrolling, and neither panel can answer the other's question. Both keep the shared half — the entity going, the selection moving off it — in their own render.
+
+This is U9's split one level up, and the sibling of the shared-action hooks (`useDuplicateEntity`, `useDeleteEntities`): there, one *action* with two buttons; here, one *window* with two ways of opening it. **The test that proves it is the one that opens it from both doors and asserts `toHaveCount(1)`** — every other assertion in the file passes with two windows open.
+
+**Gotcha, and it cost a red test:** React's synthetic `stopPropagation` stops the *native* event too. A row that swallowed its own `contextmenu` so the list's background handler would not close the window it just opened also hid the event from a window-level listener — which is how the existing spec asserts the browser's own menu was told no. The fix is to have the container handler **ask where the press landed** (`event.target.closest('[data-entity-id]')`) rather than have the row stop it. Worth reaching for generally: a container that must ignore presses on its children can read the target instead of asking the children to be quiet, and it leaves the event observable. _[earned 2026-08-15]_
+
 ## Gotchas
 
 ### UG15: A listener effect that reads `ref.current` arms against null when its element renders later — and every other code path heals it, so only the first gesture of a session is unguarded
@@ -602,9 +614,10 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/panels/TexturePanel.tsx` — U15 and the single-texture preview, moved out of the Viewport when the Viewport became the scene.
 - `kernel-2d/editor/panels/TextureOverlay.tsx` — U16. Frame guides, the strip no frame reaches, the pivot marker, and the caption that says in words what the shading says in pixels.
 - `kernel-2d/editor/panels/SceneOverlay.tsx` — U16 again: the selected entity's outline, the crosshair on its position, the line a locked grab runs along (U33), wherever the camera has put the corner the scene's y counts up from, and which entities are actually on the canvas.
-- `kernel-2d/editor/panels/OutlinerPanel.tsx` — the Outliner (named Hierarchy until 2026-08-14; older entries here say Hierarchy): what is in the open scene, in draw order, and the actions that change it — every one a transaction and none of them aware undo exists. Reordering has two doors, the arrows and dragging a row (U37).
+- `kernel-2d/editor/panels/OutlinerPanel.tsx` — the Outliner (named Hierarchy until 2026-08-14; older entries here say Hierarchy): what is in the open scene, in draw order, and the actions that change it — every one a transaction and none of them aware undo exists. Reordering has two doors, the arrows and dragging a row (U37); a right-click on a row is the second door on the right-click window (U44).
 - `kernel-2d/editor/panels/EntityInspector.tsx` — the second inspector, and where a D5 reference is written.
-- `kernel-2d/editor/panels/EntityPopover.tsx` — U39: the right-click window, its shared merge keys, and the note on why its propagation stops are native listeners.
+- `kernel-2d/editor/panels/EntityPopover.tsx` — U39: the right-click window itself, its shared merge keys, and the note on why its propagation stops are native listeners. Rendered by two panels; owned by neither.
+- `kernel-2d/editor/shell/entity-popover.tsx` — U44: the one anchor that window hangs off, its `owner`, and the placing rule both doors share.
 - `kernel-2d/editor/panels/PrefabInspector.tsx` — the inspector body a prefab document gets: what a thing is, the button that puts one in a level, and the note on why placing is an edit to the level rather than to the prefab.
 - `kernel-2d/editor/panels/NumberField.tsx` — U14, shared the moment a second inspector wanted the same behaviour.
 - `kernel-2d/editor/shell/viewport-context.tsx` — U9's third case: the texture renderer, above the layout, and the zoom state of U17.
