@@ -585,6 +585,20 @@ Repeat-placing (U31) armed a prefab so every press stamps one; a road was still 
 
 **What was not built, on purpose:** a brush size, a rectangle, an eraser, painting textures (nothing arms a texture for stamping — a stroke of textures would be a new surface, so the texture branch of the skip rule exists and has no caller yet). Each is a proposal, and the first two are what `genre-spinup` S1 sends at a game folder. _[earned 2026-08-15]_
 
+### U50: Files select in groups the way entities do — never empty, folders alone, and the singular reader gets *null* when there are several
+
+The Assets panel held exactly one path while entities had been plural for days. Making files plural cost one type change and one rule, and the rule is the part worth carrying.
+
+**The type is the entity one again** (`selection.tsx`): `{ kind: 'file'; paths; anchor }`, never empty (taking the last out lands on `none`), in click order, plus an *anchor* — the last plain- or Ctrl-clicked path — because a Shift range is measured from a place, and that place is not "the last thing in the list" once Ctrl has taken things out. **A folder is always alone**: it replaces on any click and a range skips it, because every verb that acts on many is a file verb and a mixed group is a group nothing can act on. Said in the type's comment and enforced in both `toggleFile` and the range builder, so no reader has to decide what a mixed list means.
+
+**The rule: `selectedFilePath` is the one path when exactly one is selected, and null otherwise — including when several are.** Every singular reader in the editor asks it: the Inspector's file body, the Texture tab, the import-settings context, the level that opens when a scene is selected, the rename that follows the selection, the new-file folder. Naming one of three would have the Texture tab show a picture nobody chose and open a level nobody clicked. With null, **not one of those readers changed**, and the plural readers ask `selectedFiles`. That is the same trick U47 used one level down (a described type has no schema, so nothing that validates has to learn it): give the old question an honest answer and only the new question needs new code.
+
+Three smaller things:
+
+1. **A Shift range is measured over the rows the clicked view shows** — the tree's open rows depth-first (`visibleTreeRows`), or the grid's folder — and the panel names which view the click came from rather than guessing. An anchor that is not on screen in that view (the other pane, a closed folder) makes it a plain click. Pure and unit-tested beside `assetRowsFor`.
+2. **The right-click on a group keeps the group and the menu is about all of them**; the one verb it offers is Delete, with U29's two presses and the sentence naming *how many of the N* something still uses. Rename and Move are replaced by a sentence, not hidden — a control that vanishes is a bug report. Not undoable, exactly as one file's delete is not.
+3. **A refresh prunes the group, not the singleton.** A group drops files that have gone; a single selected file that has gone stays selected so the Inspector can say *X is no longer in the project folder*, which was already a sentence worth keeping and is now the reason the prune is guarded on `paths.length > 1`. _[earned 2026-08-15]_
+
 ## Gotchas
 
 ### UG19: An SVG `<pattern>` clips its own tile, so a stroke on the tile boundary comes out half width — and a React `useId` cannot go straight into `url(#…)`
@@ -774,8 +788,8 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - `kernel-2d/editor/shell/useSelectionFocus.ts` — U18's third practicality: which tab comes forward for what was just clicked.
 - `kernel-2d/editor/shell/asset-meta-context.tsx` — U9's second case, and why a fetch with a side effect is never a panel's to own.
 - `kernel-2d/editor/shell/asset-kinds.ts` — what a file is (U11) and how to find it in the tree. Shared the moment a second panel needed the same answer.
-- `kernel-2d/editor/shell/asset-rows.ts` — which rows a folder has, and why a sidecar folds into the row of the file it annotates (`editor-kernel` D4). Shared because the Inspector counts a folder the same way the panel lists it. Carries *when* those folded-in settings were written as well as whether they exist, which is what lets anything derived from them know it is stale without asking (U48).
-- `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, which scene is open, and nothing else.
+- `kernel-2d/editor/shell/asset-rows.ts` — which rows a folder has, and why a sidecar folds into the row of the file it annotates (`editor-kernel` D4). Shared because the Inspector counts a folder the same way the panel lists it. Carries *when* those folded-in settings were written as well as whether they exist, which is what lets anything derived from them know it is stale without asking (U48). Also the tree's visible rows and the file range between two of them (U50).
+- `kernel-2d/editor/shell/selection.tsx` — U8. What is selected, which scene is open, and nothing else. Since U50, files are plural with the entity list's invariants and an anchor, and `selectedFilePath` is null when several are.
 - `kernel-2d/editor/shell/scene-prefabs.tsx` — U23's source: the resolved level every panel draws and describes, and the loud note saying it is never the thing that gets written.
 - `kernel-2d/editor/shell/useReferences.ts` — following a reference by path and modification time, once: the read-token ordering, the ask-once rule, and why "not ready" is not a problem. Shared by the textures a level draws and the prefabs it places from.
 - `kernel-2d/editor/panels/fields.tsx` — the four pieces every inspector body is built from, and the note on which lookalike deliberately did not move in.
@@ -814,7 +828,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Rulers down the edges of the picture, and a grid while snapping is *off*. The grid itself is drawn now (U46), but it appears and goes with the Snap switch, so laying a level out by eye is still done against nothing. Rulers have not been asked for at all.
 - ~~Painting by dragging: a stroke that stamps one copy per cell crossed.~~ Built 2026-08-15 (U49) as the stamp press held down. Still not written: a brush size, a rectangle tool, an eraser, and painting textures rather than prefabs — none asked for, and the first two are what `genre-spinup` S1 sends at a game folder.
 - Nesting in the Outliner. The list is flat; a row drags to *reorder* (U37), never to become a child of another.
-- Selecting more than one *file*. Entities select in groups and move, turn, scale and delete as one; the Assets panel still holds exactly one path, so its rename, move and delete verbs are one file at a time.
+- ~~Selecting more than one *file*.~~ Built 2026-08-15 (U50). Still one file at a time: rename, and *move* — moving a group is a destination-only card nobody has asked for.
 - Dragging a file inside the Assets tree or grid to move it. Moving is a name field, a folder chooser and a button (U29); drag-and-drop over a tree is a second gesture surface for an operation that already has one. A file drags *into the level* (U35) and nowhere else.
 - Any drop target for a *file* but the picture. Not the Outliner (its rows drop into it, but never an asset — the two drags carry different marker types, U37), not an entity in it, and not an entity in the viewport — dropping a texture *onto* a sprite to re-point it is a different operation (changing a reference) wearing the same gesture as creating one, and the Inspector's picker already owns it.
 - Accepting a file dragged in from outside the editor. The marker type on the drag is what an OS file drag does not have, so it is refused by construction rather than by a check; copying a file into the project folder is the sidecar's business and nobody has asked for it.
