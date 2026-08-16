@@ -256,6 +256,18 @@ So: **a screenshot that is written and never looked at is a screenshot that does
 
 **It paid twice, the same day, and the second one is a design fix rather than a CSS one.** The rotate gizmo's picture showed its caption clipped to `Turning 2 e…` — the angle, which is the number the hand is being steered by, was off the end of the bar. Clipping there is *by design* (the bar is one line, with the full sentence in the tooltip), so nothing was broken and no rule was violated; the sentence was simply ordered subject-first like every other caption. Putting the number first made it survive: `45° — turnin…`. **When a bar clips by design, the question the screenshot answers is not "does it fit" but "what is left when it doesn't"** — and that is an ordering decision, invisible to every test and to any amount of reading the source. _[extended 2026-08-15]_
 
+### V32: A promise about work *not* done is asserted by counting the work, from outside the page
+
+"Only the tiles on screen are read" is the load-bearing half of the asset thumbnails (`editor-ui` U48), and no assertion about what is *on* screen can see it: a design that read all two hundred files the moment a folder opened passes every visible-picture test in the suite, slightly later. So the test writes eighty files, opens the folder, counts the page's own requests with `page.on('request')`, and asserts the count is a fraction of the folder. Same instrument the export spec uses to prove a shipped game never calls the editor's service, which is what makes this a shape rather than a trick.
+
+Three things it needs to be honest:
+
+1. **Counted from outside the browser**, not by patching `fetch` inside the page. What crossed the wire is the claim, and a page asked to report on itself can be wrong about itself.
+2. **Filtered to the files this test made**, or the count picks up whatever else the editor happens to fetch and the bound stops meaning anything.
+3. **A pause after the last expected read**, long enough that an eager implementation would certainly have finished by then — otherwise the test measures how fast the machine is, and passes against the bug on a slow one.
+
+The sibling assertion is the *repeat*: leave, come back, and assert the count did **not** grow — which is how "it is remembered, so it cannot flicker" becomes a number instead of a hope. Watch for a legitimate second read confounding that one: a brand-new file is read once as it lands and once more when its `.meta` is written beside it. That is a reason to reset the counter after a settle, and never a reason to loosen the assertion. _[earned 2026-08-15]_
+
 ## Gotchas
 
 ### W23: A viewport screenshot taken before textures finish loading reads as a data bug, and the caption is the honest wait signal
@@ -529,6 +541,8 @@ It failed usefully once and silently once, in the same file. The "a press inside
 - `kernel-2d/tests/sidecar/document-endpoint.test.ts` — the create and the replace held to refusing each other's job, refusals first, and neither format allowed to be written over the other.
 - `kernel-2d/tests/runtime/frames.test.ts` — the frame geometry, held to "every frame reported is a whole frame, and every pixel outside one is counted".
 - `kernel-2d/tests/shell/zoom.test.ts` — the zoom ladder held to the one property that matters: every step is whole.
+- `kernel-2d/tests/editor/thumbnails.spec.ts` — V32, and V17's habit one panel over: the one assertion the feature turns on is a frame measured against the file it came from (`16x16` out of `64x16`), which a tile drawing the whole sheet passes every other test in the file for.
+- `kernel-2d/tests/shell/thumbnail.test.ts` — the arithmetic behind those pictures, as properties: the first frame of a sheet, the fall-backs to the whole image, never kept larger than the box, and a key that moves when either the art or its settings do.
 - `kernel-2d/tests/architecture/boundaries.test.ts` — W9, and two boundaries held as tests rather than promises: what ships (runtime never imports the editor, `editor-kernel` D20) and where the repo ends (no relative import escapes it, W20).
 - `kernel-2d/tests/sidecar/asset-endpoint.test.ts` — the read privilege of `editor-kernel` D21 held to its four lines, refusals first.
 - `kernel-2d/tests/runtime/load-scene.test.ts` — the runtime's loader against a fake `ProjectReader`: no browser, no service, no folder, no renderer — and the only place the runtime's own validation is exercised at all (`editor-kernel` D26, point 2).
