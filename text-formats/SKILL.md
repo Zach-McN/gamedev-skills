@@ -103,6 +103,24 @@ Three details that are easy to get wrong, in the order they bite:
 
 _[earned 2026-08-11, Zod 4.4.3]_
 
+### T22: A *game's* description of a component is a fourth kind of format — it buys an inspector and deliberately not validation
+
+T12 left the kernel with an open component map and a registry of the four types it owns, and one consequence nobody had answered: a component a game invents is carried perfectly and cannot be *authored*, because there is nothing on screen for it. The answer is a document a **game** writes describing one of its own components — a type, a title, and a list of fields with their kinds and defaults — which the editor reads and draws controls from. `kernel2d.component`, one file per component, in a `components/` folder beside the levels.
+
+**The decision worth carrying, and it is a refusal.** T12 states the bargain as "registering a type is what buys validation and an inspector for it". A description buys the second half and **must not** buy the first:
+
+- It is authored by a *game*, in the game's own folder, and a game-authored file must never be able to stop a level opening. Registering described types for validation means a typo in one file makes every level carrying that component refuse to parse — a fault in one folder taking out the project, with the panel that would explain it unreachable behind the same failure.
+- So a described component is still an *unknown* component to the schema: carried byte-for-byte, never checked. The reading is lenient at the point of use instead — a field reports "the file holds something I cannot show" rather than throwing, and the panel says so out loud beside a control showing the default.
+- **Two standards in one feature, on purpose.** The *description* is refused loudly when it is wrong (bad kind, no key, two fields writing to one key): it is one file, read once, and its author is looking at it. The *data* is never refused: it is in every level, and its author is three tools away.
+
+Three smaller things that generalise:
+
+1. **A description is a view of a component, not its schema.** So a writer spreads and sets one key rather than replacing the object — a key the description does not mention is a key some system reads. Replacing is right for a type the *kernel* owns and wrong here, and the two look identical in the diff.
+2. **What describes a component and what reads it at runtime are different files, and nothing can enforce that they agree.** The description is editor-facing; the system in `src/` narrows the same keys by hand. A test in the *game's* folder asserting the described keys are the keys the system reads is the only guard available, and it belongs there rather than in the kernel — the kernel cannot know the correspondence exists.
+3. **Field kinds start at one.** `number`, written as a discriminated union with a single member, because the component it was proved on is three numbers. A reference kind was specifically *not* added, and the reason is a format fact rather than effort: reference fix-up on rename follows `COMPONENT_REFERENCE_FIELDS`, which a description does not add to — so the field would work and the rename would silently not, which is worse than no field.
+
+_[earned 2026-08-15]_
+
 ### T13: One list, and everything else derived from it
 
 The service's document registry is `{ [format]: schema }` and the union type is `z.infer` over its values. Adding a format is one line, and the union, the "is this a format we know?" lookup and the validator that guards a write all follow from it.
@@ -164,7 +182,7 @@ Anything under a `texture` key that is not an `AssetRef` is skipped, not reporte
 
 ### T17: The `format` literal is data, so it belongs in the skills where a function name does not
 
-The literals are `kernel2d.asset-meta`, `kernel2d.scene`, `kernel2d.prefab`, `kernel2d.project`, and the served-answer formats spell themselves the same way (`kernel2d.document-view`). Every document on disk carries one (T1), and the service's registry is keyed on them (T13).
+The literals are `kernel2d.asset-meta`, `kernel2d.scene`, `kernel2d.prefab`, `kernel2d.project`, `kernel2d.component`, and the served-answer formats spell themselves the same way (`kernel2d.document-view`). Every document on disk carries one (T1), and the service's registry is keyed on them (T13).
 
 **Reason, and the line this draws:** the first parity drill established that the skills carry decisions and reasons but not identifiers, and that this is correct — a regenerating session gets function names from the test suite, which ships alongside (`editor-kernel` D12). A `format` literal is not that kind of name. **It is a value written into every file a human has ever saved**, so a regenerated kernel that spells it differently compiles, passes a suite that was regenerated with it, and cannot open a single existing project. The test for whether an identifier belongs in a skill is therefore not "is it a name" but **"is it on disk in somebody's folder?"** _[earned 2026-08-12]_
 
@@ -192,7 +210,9 @@ Zod strips keys the schema does not declare, so `parse(JSON.parse(JSON.stringify
 - `kernel-2d/runtime/formats/project-schema.ts` — T15: the game's own settings, one field that works, and the reference that is a path alone with the reason written beside it.
 - `kernel-2d/tests/runtime/project-schema.test.ts` — the round trip, the hand-added key that survives it, and the four refusals.
 - `kernel-2d/scripts/export/manifest-schema.ts` — a format that describes a *folder* rather than a document: what an export wrote, addressed to the next export. The worked example of T4 for build output.
-- `kernel-2d/sidecar/document-view-schema.ts` — T13: the one list of document formats, and the answer *about* a document. Three formats in it now, and adding the third cost the same one line the second did.
+- `kernel-2d/runtime/formats/component-schema.ts` — T22: a game's description of one of its own components, the paragraph on why describing one buys an inspector and not validation, and the lenient field reader that keeps a panel honest without letting a level fail.
+- `kernel-2d/tests/runtime/component-schema.test.ts` — the round trip, the refusals a description gets and the data does not, and the drift guard asserting a described type is still *not* in the kernel's own registry.
+- `kernel-2d/sidecar/document-view-schema.ts` — T13: the one list of document formats, and the answer *about* a document. Four formats in it now, and adding the fourth cost the same one line the second did.
 - `kernel-2d/tests/runtime/scene-schema.test.ts` — the round trip, and the unknown component that survives it.
 - `kernel-2d/tests/sidecar/document-endpoint.test.ts` — F1 sharpened, through the real service: a key added by hand surviving a write, at the top level and nested.
 - `kernel-2d/tests/sidecar/meta-schema.test.ts` — the round trip plus the rejections that make the schema a contract rather than a suggestion.
