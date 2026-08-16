@@ -836,7 +836,7 @@ Contracts are referenced as file paths, never paraphrased as prose. Read the fil
 - Sorting, searching or filtering the icon view, and a tile size. The folder's own order (`editor-kernel` D4's rows, folders first) is the only order, and the tiles are one size.
 - Back and forward *buttons* in the bar. The trail exists and the mouse's side buttons walk it (U36), the breadcrumb goes back up, and nothing on screen goes forward — so a hand without a five-button mouse has no forward at all. Two arrows in the bar is the obvious answer and has not been asked for.
 - Remembering the Assets view or the folder across a reload. It is window state on purpose (U34); persisting it is the same feature as saved layouts (UG4) and belongs with it.
-- Deleting a folder. Renaming and moving take folders; deleting is one file at a time (`editor-kernel` D22).
+- ~~Deleting a folder.~~ Built 2026-08-15 (`editor-kernel` D22, amended): Delete folder, after a sentence naming how many files and how many are used.
 - A panel menu or anything that lists the viewport's shortcuts. `Home` and `F` are named in the caption's own sentences and on two buttons; `G`, `X`, `Y` and `Esc` are named by the caption while a grab is running; `Shift-D` is in the Duplicate button's tooltip. Nowhere else, and there is no list of them in the editor.
 - Two scenes open at once. `openScene` is one path.
 - Saved layouts (UG4's second half — the panel menu is U38, and the arrangement still resets on reload).
