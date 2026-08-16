@@ -506,6 +506,12 @@ It failed usefully once and silently once, in the same file. The "a press inside
 
 **Fix/policy:** take every screen point *before* building the selection under test, and reuse it — and say so at the helper, since the hazard is invisible at the call site. The general rule: **a measuring helper with a side effect on the state being measured is only safe before the arrangement, never during it.** When a multi-entity test passes first time, check what the selection actually was at the moment of the gesture; the cheapest way is an attribute assertion (`data-scene-selected-count`) immediately before it, which is also the assertion that makes the accident impossible to repeat. _[earned 2026-08-15, first multi-entity move]_
 
+### W29: `expect.poll(() => read()?.field).not.toBeNull()` passes before the file exists — `undefined` is not `null`
+
+A poll waiting for a value to be written was written as "not null", through an optional chain over a reader that returns `null` for "the component is not there yet". The chain turns that `null` into `undefined`, which satisfies `not.toBeNull()` on the first tick, and the next line reads the value and gets `undefined`. The failure reads as the *editor* not having written the reference, one line below the poll that "proved" it had.
+
+**Fix/policy:** poll for the shape you are waiting for, never for the absence of one you are not — `toEqual(expect.objectContaining({ path }))`, `toBe(value)` — and be suspicious of any `.not.` matcher on a polled read that goes through `?.`. The general rule, worth restating: **a negative assertion is satisfied by every state you did not think of.** _[earned 2026-08-15]_
+
 ## Contracts
 
 - `kernel-2d/tests/fixtures/project-fixture.ts` — the temp-project builder, `waitFor`, and `delay`. Everything filesystem-shaped in the suite starts here.
