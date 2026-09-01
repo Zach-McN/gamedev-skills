@@ -553,6 +553,8 @@ Six things that only show up once it is built:
 
 _[earned 2026-08-15]_
 
+**Amended 2026-09-01 (`text-formats` T24).** A generated section is drawn for every described component on **every** entity, which is invisible with one description in a project and unmissable with two: the platformer's second enemy put "Add walker" and "Add turtle" on all 249 entities of its level. A description may now say `addable: false`, and then its section is drawn only where the entity carries one or inherits one. Two rules held while adding it, and both were the tempting thing to break — **an inherited component still gets its Add**, because that is how one placement is detached from its prefab; and **a component that really is in the file is still shown wherever it sits**, fields and Remove, because U10 forbids a panel hiding what a level holds to keep a rule tidy. The suppressed state is *no section*, not a greyed-out button: the noise a button makes on a cloud is the noise a disabled button makes on a cloud.
+
 ### U48: A picture of a file is keyed on what would change it, read when it is looked at, and kept nowhere the human can see
 
 The Assets panel's icon view drew a folder or a blank-page glyph on every tile, so the one view meant for browsing art identified it by filename. Tiles show the art now. Five decisions, and the first two are the ones that generalise past thumbnails to anything derived from a file.

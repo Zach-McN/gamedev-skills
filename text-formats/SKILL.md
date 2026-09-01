@@ -197,6 +197,20 @@ The literals are `kernel2d.asset-meta`, `kernel2d.scene`, `kernel2d.prefab`, `ke
 
 **Reason, and the line this draws:** the first parity drill established that the skills carry decisions and reasons but not identifiers, and that this is correct — a regenerating session gets function names from the test suite, which ships alongside (`editor-kernel` D12). A `format` literal is not that kind of name. **It is a value written into every file a human has ever saved**, so a regenerated kernel that spells it differently compiles, passes a suite that was regenerated with it, and cannot open a single existing project. The test for whether an identifier belongs in a skill is therefore not "is it a name" but **"is it on disk in somebody's folder?"** _[earned 2026-08-12]_
 
+### T24: A description can refuse to be handed out, because it can say what a component *holds* and never what it *belongs on*
+
+`addable: false` in a description, absent meaning yes. It stops the editor offering the component to an entity that is not already one: the section is drawn only where the entity carries one or inherits one from its prefab, and nowhere else at all.
+
+**The hole it patches is structural, not cosmetic, and it only shows up at the second described component.** With one description in a project the Add button is a feature. With two, the platformer's `walker` and `turtle` each grew an Add button on **all 249 entities of its level** — on clouds, on bricks, on the coin counter — every one of them offering to write a component no system in the game would ever read. And there is no way for the editor to do better on its own: nothing in a level marks an entity as an enemy, because *being* an enemy is carrying the `walker`, which is exactly the thing the button offers. An entity's own components are the only evidence available, so the only honest rule is one the description states about itself.
+
+Three boundaries, each of which was the tempting wrong answer:
+
+1. **A placement that inherits one is still offered Add.** It plainly is one of these already, and Add on an inherited component is how a single placement is given its own values and detached from the prefab — the one workflow this would otherwise have destroyed.
+2. **Nothing is hidden that is really in the file.** A component sitting where it makes no sense still shows its fields and its Remove. Suppressing it would make the panel lie about a level to keep a rule tidy, which `editor-ui` U10 forbids; this key governs what may be *added*, never what is shown of what exists.
+3. **No section at all, not a disabled button and not a sentence explaining the absence.** A greyed-out "Add walker" on a cloud is the same noise one indirection later.
+
+Cheap because it is a *view* decision on a format that was already declared a view of a component rather than its schema (T22): one optional boolean, one exported reader holding the absent-means-yes default, one early return in the panel. Nothing about the data changed, so every description written before it keeps working unchanged. _[earned 2026-09-01, the platformer's two enemies]_
+
 ## Gotchas
 
 ### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
