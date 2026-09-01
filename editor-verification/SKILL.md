@@ -514,6 +514,10 @@ A poll waiting for a value to be written was written as "not null", through an o
 
 **Fix/policy:** poll for the shape you are waiting for, never for the absence of one you are not — `toEqual(expect.objectContaining({ path }))`, `toBe(value)` — and be suspicious of any `.not.` matcher on a polled read that goes through `?.`. The general rule, worth restating: **a negative assertion is satisfied by every state you did not think of.** _[earned 2026-08-15]_
 
+### W30: The export guard reads *comments* — a runtime file that so much as names an editor `.tsx` file fails every browser test before one runs
+
+The browser suite's global setup builds the exported game and refuses to open it if `game.js` mentions `.tsx`, on the grounds that a reference to a React component file means editor code was bundled (`tests/editor/test-export.ts`). It does not distinguish code from a comment: a `runtime/` doc comment that cited `editor/panels/ComponentFields.tsx` as a cross-reference made the whole Playwright suite fail at config-load with "Could not build the exported game", nowhere near the file that caused it. The guard is right and the comment was wrong — `runtime/` ships inside the game and has no business pointing into `editor/` even in prose. **Fix:** in runtime files, refer to editor behaviour by what it does, never by its file. If a session sees that error with no runtime *code* change, grep `runtime/` for `.tsx`. _[earned 2026-09-01]_
+
 ## Contracts
 
 - `kernel-2d/tests/fixtures/project-fixture.ts` — the temp-project builder, `waitFor`, and `delay`. Everything filesystem-shaped in the suite starts here.
