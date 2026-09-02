@@ -268,6 +268,14 @@ Three things it needs to be honest:
 
 The sibling assertion is the *repeat*: leave, come back, and assert the count did **not** grow — which is how "it is remembered, so it cannot flicker" becomes a number instead of a hope. Watch for a legitimate second read confounding that one: a brand-new file is read once as it lands and once more when its `.meta` is written beside it. That is a reason to reset the counter after a settle, and never a reason to loosen the assertion. _[earned 2026-08-15]_
 
+### V33: A test that waits for a dev server waits on the thing the server *did*, published by the page — never on a poll of whole runs
+
+The hot-replacement test (`play.spec.ts`) used to prove an edit had reached the editor by pressing Play, counting what moved, and pressing Stop, twenty seconds at a time, until the count was right. That is a poll of side effects with a clock on it, and under a loaded machine the clock lost — the test then reported the *old* behaviour ("expected 1, received 2"), which reads as the feature being broken and cost a stashed-baseline run every time to disprove (W26).
+
+**The fix was in the product, not the test.** The virtual module that carries a game's systems now counts its own evaluations (`gameCodeVersion()`) and fires a window event on each; the viewport publishes the count as `data-game-code-version`. The test reads it, writes the file, waits for it to *change* (30 s — a ceiling on the dev server's slowness, not a guess at its speed), and then runs the level exactly once. Deterministic, and the wait is now V5's shape: a condition, named, with a timeout that only ever means "the server is broken".
+
+The general rule, which is V6 pointed at a server: when a test is waiting for something outside the page to happen, find the moment the page *learns* it happened and publish that as a fact the test can read. If the page has no such moment, that is a gap in the product — the human cannot see it either — and the fix belongs there. _[earned 2026-09-01, after a month of the same red test]_
+
 ## Gotchas
 
 ### W23: A viewport screenshot taken before textures finish loading reads as a data bug, and the caption is the honest wait signal
@@ -491,6 +499,8 @@ The commonest offender is the poll that waits for Vite to hot-replace an edited 
 **Fix/policy:** before treating a full-suite failure as a regression, re-run that spec alone; if it passes, and especially if the failing set moves between runs, it is load. Do not "fix" it by widening a timeout that is already generous — and do not let it become the reason a suite result is skimmed, which is the real cost: a genuine failure in a noisy suite is a failure nobody trusts. When a run is green except for known-flaky specs, say so explicitly rather than reporting the suite as green. _[earned 2026-08-15, four full runs plus a stashed baseline]_
 
 **Confirmed again 2026-09-01**, unchanged two weeks and 170 tests later: a full run with the session's change failed 3 of 441, a stashed-baseline full run failed 5 — overlapping but *different* sets, and the same `play.spec.ts` hot-replacement poll in both, reporting the same "expected 1, received 2". All three of the change-run's failures passed when their specs were run alone. The measurement worth repeating is the stashed baseline: it is the only thing that separates "my change broke this" from "this suite is noisy under load", and it costs one full run.
+
+**Fixed 2026-09-01, by making the wait a fact (V33).** The poll was guessing at how long the dev server needs to notice a file; the module now announces its own replacement, the viewport publishes the count, and the test waits on that with a 30 s ceiling before running the level once. What remains in W26 is the general lesson — full-run failures are not regressions until they fail alone — and the drag-from-assets drop test, which still fails under load and has not been looked at.
 
 ### W27: `page.mouse.click` silently ignores `modifiers` — a modified click in a canvas has to hold the key by hand
 
