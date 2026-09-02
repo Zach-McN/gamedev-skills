@@ -308,6 +308,8 @@ never for wall-clock. _[earned 2026-08-14, second spin-up]_
 
 Same family as V5: the poll is the wait, so everything inside it has to be a *probe*, and a probe never throws about the very condition it exists to wait out. _[earned 2026-08-14]_
 
+**The helper sat on an unmerged branch for seventeen days while this entry named it as the one way.** Written 2026-08-14 on `claude/upbeat-murdock-2ce55c` and never merged; the five polls it was to replace stayed as bare parses on `main` until the fifth gardening pass cherry-picked it (2026-09-01) — and that pass's own baseline run of the browser suite failed on exactly the test this entry names, `new-scene.spec.ts`, then passed clean with the helper in. `editor-kernel` G3's item 11 is the check that would have caught it.
+
 ### W21: A geometry test calibrated to the panel size it was written at goes red on a stylesheet
 
 Four browser tests went red when the editor's panels gained a gap and the canvas an eight-pixel inset (`editor-ui` U32). No logic changed, and the editor was behaving correctly in every one of them — measured by hand afterwards, a click still landed within a five-thousandth of a unit of where the camera said it did. What broke was four assertions that had been calibrated, silently, to the exact canvas size of the day they were written.
@@ -582,9 +584,11 @@ The browser suite's global setup builds the exported game and refuses to open it
 - `kernel-2d/tests/sidecar/meta-generation.test.ts` — the same rules through the running service (V13), including the "within a second" budget and the assertion that the folder settles rather than feeding itself. Also where D22's ordering rule is actually provable: a rename through the running service, against a live watcher, keeping its id.
 - `kernel-2d/tests/sidecar/meta-endpoint.test.ts` — the answer the Inspector receives over the wire, and every path-escape attempt refused.
 - `kernel-2d/tests/editor/test-project.ts` — the throwaway project the browser tests point the editor at, built at run time under `tests/.tmp/` and git-ignored (V10).
+- `kernel-2d/tests/editor/scene-view.ts`, `fields.ts`, `panels.ts`, `select-asset.ts`, `parse-when-whole.ts` — the browser suite's shared hands: the viewport and Outliner-row locators, the camera-settled poll, opening a level, the middle of the selected outline, typing into a field, fronting a tab, walking the Assets tree, and a poll-safe parse. A spec never imports another spec; a helper a third spec wants goes here (`editor-kernel` G3 item 13).
+- `kernel-2d/tests/runtime/hand-cranked-frames.ts` — the frame source every runner test drives by hand, in place of the engine's ticker.
 - `kernel-2d/tests/sidecar/events.test.ts` — the change feed end to end: real folder, real watcher, real HTTP stream, including the reader that parses server-sent frames and the ordered teardown a live stream needs.
 - `kernel-2d/tests/scripts/sample-project.test.ts` — how a content generator is held to its promises: real file formats, identical bytes on every run, and never touching an unmarked file.
-- `kernel-2d/tests/scripts/export.test.ts` — a command that produces an artefact, held to its refusals first: ten of them, none needing a build, plus the four tests that do build — including "export twice, byte-identical folders".
+- `kernel-2d/tests/scripts/export.test.ts` — a command that produces an artefact, held to its refusals first — none of them needing a build — ahead of the few tests that do build, including "export twice, byte-identical folders".
 - `kernel-2d/tests/instruments/drawn-comparison.ts` and its test — V26: two pictures compared in the level's own units, and each way they can differ named.
 - `kernel-2d/tests/runtime/drawn-in-scene.test.ts` — the projection V26 rests on, including the one test that distinguishes the drawn camera from the requested one.
 - `kernel-2d/tests/editor/export.spec.ts` — V26 and V27 end to end: a served folder that plays the game, checked against play mode, moved somewhere else, opened off the disk, and proved to hold no editor.
