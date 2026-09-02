@@ -211,6 +211,16 @@ Three boundaries, each of which was the tempting wrong answer:
 
 Cheap because it is a *view* decision on a format that was already declared a view of a component rather than its schema (T22): one optional boolean, one exported reader holding the absent-means-yes default, one early return in the panel. Nothing about the data changed, so every description written before it keeps working unchanged. _[earned 2026-09-01, the platformer's two enemies]_
 
+### T25: An entity's `parent` is an id alone, optional and absent — the first reference in a format that points inside its own file
+
+`parent?: string` on the scene's `Entity` (`editor-kernel` D37, 2026-09-02): the id of another entity in the same list. Three things about its shape, each decided against a tempting alternative:
+
+1. **An id alone, not T15's id-and-path pair.** The pair exists because a *file* can move and be renamed (D5); an entity in the same document has no path, and its id is already the name nothing changes. Carrying a name beside it would have been a second copy of a string the Outliner renames freely.
+2. **Optional and absent, never `null` — T21 exactly.** The kernel's own constitution had written "defaulting to null" ahead of the feature; T21's test decided it: a `null` on every entity is a whole-project diff the day the editor next saves. The round-trip test therefore asserts two things, not one — the nested scene reads back identical, *and* `serializeScene` of a scene with nothing nested contains no `"parent"` anywhere.
+3. **A parent that cannot be followed is not a parse failure.** The schema accepts an id that names nothing and a chain that loops; the loader reports both (`parent-missing`, `parent-cycle`) and places the entity by its own numbers. Refusing would answer a stray character with a level that will not open — D34's argument for opacity, one field over.
+
+**The gotcha the report kinds taught:** they were the first members of `LoadProblem` with no `path`. Two helpers had quietly assumed every problem names a file — `describeLoadProblem` read `nameOf(problem.path)` *before* its switch, and the sort keyed on `path` — and both would have thrown at runtime with every type check green. A union gaining a member of a different shape needs its consumers re-read for what they assume of the *old* members, not only its switches extended. _[earned 2026-09-02]_
+
 ## Gotchas
 
 ### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
