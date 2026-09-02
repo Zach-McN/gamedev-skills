@@ -138,6 +138,13 @@ Ask it of anything the runtime is given permission to mutate: **is the thing bei
 
 _[earned 2026-08-14, first door and first story]_
 
+**Second consumer, 2026-09-01:** the platformer's level 1 → level 2. Its win screen asks
+a question and answers with `openDoor` either way (the next scene, or the same scene —
+which is its R). The seam needed nothing: the destination is content on a placed marker
+whose `scene`-keyed field the export already walks (T20), and the game's own suite asserts
+both doors with `doorIn` and no host. The one-scene-path-no-payload shape held; coins did
+not need to travel, and the day something must, the story (not the door) is where it goes.
+
 ### D31: The game aims the camera through a third ask entity, the focus is the whole ask, and the host clamps it to what there is to see
 
 `runtime/game/camera.ts`, crossing the seam the way the door does (D30): `aimCamera(entities, focus)` keeps one `run#camera` entity re-aimed, the runner reads it each moved frame and tells the host **before that frame's draw**, so the picture and the viewpoint arrive together — told afterwards, the view trails the game by a frame, which reads as the level jittering against its own background. Demanded by the platformer's camera follow, the first level wider than its window.
