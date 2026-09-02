@@ -559,6 +559,11 @@ _[earned 2026-08-15]_
 
 **Amended again 2026-09-01, the same afternoon.** Add on an *inherited* component wrote the description's defaults, and the first human to press it lost an enemy's death: the platformer's walker inherits `{ unitsPerSecond, squashed: { texture }, puff, knockPuff }` from its prefab, Add wrote `{ unitsPerSecond: 33 }`, and — because a placement's own component beats the prefab's *whole*, per type (`text-formats`, prefab resolution) — the stomp animation vanished with the three keys the description had never heard of. **"Give this placement its own" means a deep copy of what it already has, never the defaults**; defaults are for an entity that had nothing. The description is a *view* of a component (T22), so it cannot be the source of the component's whole value, and any writer that treats it as one drops the keys it cannot see. The same reasoning that made the field writer spread rather than replace, one level up.
 
+**Amended a third time, 2026-09-01 (later the same day).** Two things the first cut left out, both found by the first human to use it:
+
+1. **The fields draw on a prefab as well as on an entity, and the difference is one function.** `ComponentFields` takes a `target` — `{ kind: 'entity', scenePath, entity, resolved }` or `{ kind: 'prefab', path, prefab }` — and the only thing that varies is where a write goes: into the entity re-found by id inside the scene's transaction, or into the prefab document's own component map. Everything else (the fields, Add, Remove, spread-over-replace, the mismatch note) is shared by construction. Until then the prefab panel named a described component as one it had no controls for, and "change every walker's speed" meant editing the file — the human's first question after per-instance speed landed was why the prefab had no box. Test ids are prefixed by the carrier (`entity-component-…`, `prefab-component-…`) because a prefab and one of its instances are routinely on screen in the same test. A prefab is offered every described component regardless of `addable`: a prefab is *how* an enemy comes to exist, so that offer is always the human's business there.
+2. **An inherited component's values are shown, read-only, before Add.** The section used to be a sentence ("has one because its prefab does") and a button — so the only way to learn a placed enemy's speed was to press Add and detach it, which is a question answered by changing the file. Now the same `DescribedField` renders with `readOnly`, as the `Field` text the mismatch case already used, and Add turns text into boxes. One renderer, one more flag; a second read-only renderer would drift from the first on the day a kind was added.
+
 ### U48: A picture of a file is keyed on what would change it, read when it is looked at, and kept nowhere the human can see
 
 The Assets panel's icon view drew a folder or a blank-page glyph on every tile, so the one view meant for browsing art identified it by filename. Tiles show the art now. Five decisions, and the first two are the ones that generalise past thumbnails to anything derived from a file.
@@ -625,6 +630,16 @@ The Assets panel's search box (2026-09-01). Three decisions, each of which had a
 3. **The matching rule is a pure function beside the row rule (`searchRows` in `asset-rows.ts`), name-not-path, every-word, case-blind, walking `assetRowsFor` so `.meta` folds exactly as it does everywhere else.** Name rather than path because a path match on `textures` returns everything under `assets/textures/` — a search that finds everything and tells you nothing — and the folder is shown beside the match anyway. Blank matches nothing: "no search" is the folder view, not a list of every file. Unit-tested on a small tree (`tests/shell/asset-search.test.ts`) because every question about it is a question about the list; the browser suite asserts the replacing, the verbs on a result, and survival of a panel drag.
 
 _[earned 2026-09-01, asked for as "a search bar in the content browser"]_
+
+### U53: The Outliner's filter hides rows and changes nothing else — and a hidden row cannot be dragged past
+
+A filter box under the Outliner's buttons (2026-09-01), asked for after a 250-entity level took twenty-five scrolls to find one walker in. Three decisions:
+
+1. **It narrows what is shown and touches nothing.** Not the selection (a hidden row stays selected, and the viewport's count agrees), not the draw order, not the level — it lives beside the Assets search in shell state (`outliner-filter.tsx`, above the layout per U9, not remembered per project per U51), never in a transaction. Hidden rows keep their true index (`data-row-index` is the place in the whole list), so nothing that reads a row's index learns the filter exists.
+2. **Dragging to reorder is off while a filter is on.** A drop slot is "between the row above and the row below the pointer", and between two shown rows there may be any number of hidden ones — a drop there has no honest meaning, and the drop-line arithmetic would draw one anyway. So `draggable={!filtering}`, said on the box's tooltip, and the `↑` `↓` buttons still move the selected row one place because they do not depend on what is on screen. Disabling the gesture beat inventing a rule for it.
+3. **The matching rule is the Assets search's rule** (`nameMatches`: every word, any order, case-blind), so the two boxes on screen are one kind of thing to learn. Its own row under the bar rather than a sixth control on it, because the bar is full at the panel's narrowest and a line that reads on every keystroke wants its own line — fixed-height, so typing never moves the list under a press (UG8).
+
+_[earned 2026-09-01]_
 
 ## Gotchas
 
