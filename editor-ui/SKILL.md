@@ -628,6 +628,11 @@ _[earned 2026-09-01, asked for as "a search bar in the content browser"]_
 
 ## Gotchas
 
+### UG20: A second line on the Assets panel's hint takes the empty background away, and four right-click tests fail as "no background to press on"
+
+Adding the search box (U52) came with one more sentence on the hint under the browser. At the browser suite's window size that made the hint two lines, the tiles filled the shorter body, and every test that right-clicks the *empty* part of the browser failed with the helper's own sentence — "the folder listing fills the panel, so there is no background to press on" — in a spec that mentions no search box. Deterministic, not load: it reproduced alone. The panel's header comment already says the footer has to stay one unchanging small line, and this is the second reason why: the first was a double-click landing on a moved tile (UG8), and this one is the body's height being what leaves room to right-click. **Fix:** the sentence came out; a control with a placeholder and a tooltip does not need a line of hint. When a full-run failure names a spec far from the change, check what the change did to the *height* of things. _[earned 2026-09-01]_
+
+
 ### UG19: An SVG `<pattern>` clips its own tile, so a stroke on the tile boundary comes out half width — and a React `useId` cannot go straight into `url(#…)`
 
 Two small things that both look like styling problems and are not.
