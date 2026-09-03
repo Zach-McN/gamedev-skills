@@ -221,6 +221,16 @@ Cheap because it is a *view* decision on a format that was already declared a vi
 
 **The gotcha the report kinds taught:** they were the first members of `LoadProblem` with no `path`. Two helpers had quietly assumed every problem names a file — `describeLoadProblem` read `nameOf(problem.path)` *before* its switch, and the sort keyed on `path` — and both would have thrown at runtime with every type check green. A union gaining a member of a different shape needs its consumers re-read for what they assume of the *old* members, not only its switches extended. _[earned 2026-09-02]_
 
+### T26: A prefab's `children` and a placement's `parts` are both optional-absent, and the id that joins them is not a format id
+
+`runtime/formats/prefab-schema.ts` (2026-09-02, `editor-kernel` D25 amended). A prefab may carry `children: PrefabPart[]` — each `{ id, name, transform, parent?, components }`, the transform an offset from what the part rides — and a placement's `prefab` component may carry `parts: { [partId]: { [type]: value } }`. Three things decided:
+
+1. **Both fields are optional and absent, never empty (T21).** A prefab that is one entity never mentions `children`; a placement that takes the prefab as it is never mentions `parts`. The editor's Remove-part deletes the list when it empties it, and the one override writer deletes an emptied record and then an emptied map — so both round-trip tests assert the *absence* of the key in `serializePrefab` / `serializeScene` output, not just equality after a parse.
+2. **A part's id is stable within its prefab, and a drawn part's id is derived from it** — `<placement id>:<part id>`. The derived id is never written and no schema checks it; it exists in resolved lists only. A format id stays opaque (T6); this one carries meaning on purpose and is documented as resolution's contract, not the format's.
+3. **The refusal has to follow the shape.** "A prefab may not contain a prefab" was one check on `components.prefab`; a `children` list and a `parts` map are two more places a `prefab` key could appear, and each has its own refusal. A format that gains a nested carrier must re-ask every invariant it holds on the outer one.
+
+The override stores live *inside the reference they qualify* rather than beside it, so `copyEntity` carries them and reference rewriting never sees them. _[earned 2026-09-02]_
+
 ## Gotchas
 
 ### F2: A schema whose optional fields are `?: T` fails to typecheck under `exactOptionalPropertyTypes`
