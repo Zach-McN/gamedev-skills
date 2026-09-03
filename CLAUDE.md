@@ -1,5 +1,5 @@
 CLAUDE.md — gamedev-skills
-This repo is a skill library for AI-built game editors. It is the permanent asset of the whole methodology: the kernel repos (`kernel-2d`, `kernel-3d`) and game projects are regenerable outputs; this library is the engine that regenerates them. Treat every edit here with the same rigor as production code. Full methodology: see `docs/ai-game-tooling-report.md` if present, or ask.
+This repo is a skill library for AI-built game editors. It is the permanent asset of the whole methodology: the kernel repo (`kernel-2d` — one kernel for both 2D and 3D since 2026-09-03, `editor-kernel` D38; the name is historical) and the game projects are regenerable outputs; this library is the engine that regenerates them. Treat every edit here with the same rigor as production code. Full methodology: see `docs/ai-game-tooling-report.md` if present, or ask.
 What lives here
 One folder per skill, each with a `SKILL.md`:
 
@@ -8,7 +8,7 @@ One folder per skill, each with a `SKILL.md`:
 * `editor-ui` — React/docking/inspector idioms
 * `editor-verification` — testing recipes and invariants
 * `phaser4-runtime` — Phaser 4 specifics + v3-contamination warnings
-* `threejs-runtime` — Three.js/WebGPU (stub until the 3D kernel begins)
+* `threejs-runtime` — Three.js/WebGPU, the kernel's 3D side (stub until the first 3D project begins)
 * `genre-spinup` — the genre spin-up playbook
 * `genre-*` — one per shipped genre, added over time
 

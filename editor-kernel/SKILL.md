@@ -210,7 +210,7 @@ _[earned 2026-08-15, first fading particle]_
 
 ### D37: Where an entity *is* is answered by one function, adopted while that answer is still its own transform
 
-Recorded 2026-09-02, ahead of the feature it prepares for, after setting this kernel beside UEFN's Scene Graph (entities that nest, transforms that are local to a parent) and beside what the 3D kernel will stand on (Three.js's object tree; USD's tree of prims with local transforms). The list is still flat and nothing carries a `parent`. This entry exists so that the day one does, it costs one place.
+Recorded 2026-09-02, ahead of the feature it prepares for, after setting this kernel beside UEFN's Scene Graph (entities that nest, transforms that are local to a parent) and beside what the kernel's 3D side will stand on (Three.js's object tree; USD's tree of prims with local transforms — D38). The list is still flat and nothing carries a `parent`. This entry exists so that the day one does, it costs one place.
 
 **The rule: no new code reads `entity.transform` to decide where something is.** It asks one engine-free function — `worldTransformOf(entity, entities)`, to live in `runtime/scene/coordinates.ts` beside the camera crossing (D23), exported through `runtime/game/api.ts` (D28) so a game's systems can ask it too. Today that function returns the entity's own transform, and a reader can tell no difference. The day `parent` lands, the function composes parent onto child and every caller is right without being touched; a system judging contact between a ninja and a hazard that rides a spinning arm is right for the same reason and on the same day.
 
@@ -589,6 +589,27 @@ The narrow exception is migration scripts — a one-off format converter is tool
 React + docking layout + Zustand/immer + Zod, with only the viewport differing between 2D and 3D kernels. **Reason:** the panels, trees, and inspectors are identical work in both; sharing the stack means the 3D kernel inherits a proven shell and the hard 3D-specific problems (camera, raycast selection, gizmos) get the full budget. Detailed idioms belong to `editor-ui`; the constitution only fixes the stack. _[seeded 2026-08-11, report §6/§7]_
 
 **Confirmed in build.** The shell is React 19 + Vite 8 + `dockview-react` 8 (the React binding package in v8; `dockview` and `dockview-core` arrive underneath it). Zustand and immer were deliberately **not** installed with the shell: there is no document state for them to hold until the first panel that edits something, and adding the undo machinery before there is anything to undo would fix its shape against an imagined document. They land with the first editing panel, not before. _[earned 2026-08-11]_
+
+**Amended 2026-09-03.** "Between 2D and 3D kernels" is no longer the shape: there is one kernel, and the viewport is the one panel in it that knows the dimension. D38 records the decision; this entry keeps the stack. _[recorded 2026-09-03]_
+
+### D38: One kernel for both dimensions; which one a project is, is a property of the project
+
+Decided 2026-09-03, after two 2D games and before any 3D work. Supersedes the report's "build this once per dimension — a `kernel-2d` and a `kernel-3d`" (§5) and its roadmap's separate Kernel 3D (§14), and narrows D15's "between 2D and 3D kernels" to "between a 2D and a 3D *viewport*". A 3D game opens in the same editor a 2D game does.
+
+**Reason.** The report guessed ~60% of an editor is genre-agnostic. Two genres in, the figure that matters is how much is *dimension*-agnostic, and it is nearly all of it: Assets, Outliner, Inspector, undo, saving, prefabs, the sidecar, layout persistence, the play gate — none of it knows whether the level it is holding is flat. A second kernel is a second copy of all of that, and every fix afterwards is made twice or backported, forever, in two repos with two histories. Godot and Unity both landed here for the same reason: one editor, the dimension a switch. The decision was made *before* the copy rather than after, because the tax starts the day the copy exists.
+
+**What it costs, named so it is paid once.** The transform. `Transform` is `x, y, rotation, scaleX, scaleY` (`runtime/formats/scene-schema.ts`); a 3D entity needs three of each and a rotation that is not one angle. That is the one shared format the dimension reaches into, it is the file every level is written in, and D37 already routes every reader through `worldTransformOf` so the change lands in one place. It is made deliberately with its round-trip tests (`text-formats`), not by accretion.
+
+**Rules that follow.**
+- The dimension is declared in `project.json`, beside the starting level; nothing infers it from the scenes or the assets.
+- The shell may not branch on it. A panel that finds it needs to has found a viewport concern that leaked.
+- The viewport and the runtime it embeds are what differ. Neither dimension's renderer loads into a project of the other, and an export carries exactly one (`scripts/export`).
+- A panel that serves one dimension declares it and is not offered to the other.
+- `threejs-runtime` is the home for the 3D side's earned knowledge, `phaser4-runtime` for the 2D side's, and this skill for what is shared.
+
+**What stays open, deliberately.** Whether the two runtimes are one package with two renderers or two packages behind one interface is not decided here — the first 3D project decides it, as the second consumer that authorises the extraction ("by extraction, never by anticipation", workspace `CLAUDE.md`). The folder is still named `kernel-2d`; renaming touches every game's launcher and import alias and is its own session.
+
+_[recorded 2026-09-03, ahead of the first 3D project]_
 
 ---
 
